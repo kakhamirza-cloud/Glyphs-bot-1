@@ -1,0 +1,29 @@
+{
+  "name": "glyphs-bot-1",
+  "version": "1.0.0",
+  "description": "Glyphs guessing game Discord bot",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon --watch src --exec ts-node src/index.ts",
+    "register": "ts-node src/register-commands.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dayjs": "^1.11.18",
+    "discord.js": "^14.22.1",
+    "dotenv": "^17.2.2",
+    "lowdb": "^7.0.1",
+    "nanoid": "^5.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}
