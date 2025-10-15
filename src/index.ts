@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import express from 'express';
 import { Client, GatewayIntentBits, Interaction, MessageComponentInteraction, StringSelectMenuInteraction, Events, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, MessageFlags, DiscordAPIError, GuildMember, PartialGuildMember } from 'discord.js';
 import { buildChoiceMenu, buildPanel, buildGrumbleRuneSelection, buildGrumbleAmountInput } from './ui';
 import { GameRuntime, initGame, recordChoice, SYMBOLS, SymbolRune, startTicker, getBalance, getLastBlockRewardInfo, getUserRewardRecords, getLeaderboard, pickRandomSymbol, symbolDistance, saveGrumbleState, getGrumbleState, clearGrumbleState, isGrumbleActive, shouldGrumbleEnd, setUserGlyphs, getUserBetInfo } from './game';
@@ -1126,6 +1127,30 @@ async function main() {
                 return;
             }
         }
+    });
+
+    // Start health check server for Railway
+    const app = express();
+    const port = process.env.PORT || 3000;
+    
+    app.get('/health', (req, res) => {
+        res.status(200).json({ 
+            status: 'healthy', 
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            memory: process.memoryUsage()
+        });
+    });
+    
+    app.get('/', (req, res) => {
+        res.status(200).json({ 
+            message: 'Glyphs Bot 1 is running',
+            status: 'online'
+        });
+    });
+    
+    app.listen(port, () => {
+        console.log(`🏥 Health check server running on port ${port}`);
     });
 
     await client.login(process.env.DISCORD_TOKEN!);
