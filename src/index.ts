@@ -1129,18 +1129,9 @@ async function main() {
         }
     });
 
-    // Start health check server for Railway
+    // Simple health check server for Railway
     const app = express();
     const port = process.env.PORT || 3000;
-    
-    app.get('/health', (req, res) => {
-        res.status(200).json({ 
-            status: 'healthy', 
-            timestamp: new Date().toISOString(),
-            uptime: process.uptime(),
-            memory: process.memoryUsage()
-        });
-    });
     
     app.get('/', (req, res) => {
         res.status(200).json({ 
@@ -1150,7 +1141,7 @@ async function main() {
     });
     
     app.listen(port, () => {
-        console.log(`🏥 Health check server running on port ${port}`);
+        console.log(`🚀 Server running on port ${port}`);
     });
 
     await client.login(process.env.DISCORD_TOKEN!);
