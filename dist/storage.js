@@ -16,11 +16,22 @@ async function openState() {
     const db = new lowdb_1.Low(adapter, {
         currentBlock: 1,
         totalRewardsPerBlock: 700000,
+        baseReward: 1000000,
         blockDurationSec: 30,
         nextBlockAt: Date.now() + 30 * 1000,
         blockHistory: [],
+        currentChoices: {}, // Default empty
+        grumbleState: null, // Default no active grumble
     });
     await db.read();
+    // Ensure currentChoices exists if loading from old state
+    if (!db.data.currentChoices)
+        db.data.currentChoices = {};
+    if (typeof db.data.baseReward !== 'number')
+        db.data.baseReward = 1000000;
+    // Ensure grumbleState exists if loading from old state
+    if (!db.data.grumbleState)
+        db.data.grumbleState = null;
     await db.write();
     return db;
 }

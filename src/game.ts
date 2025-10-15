@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { Low } from 'lowdb';
-import { openBalances, openState, BalanceMap, PersistedState, MemberResult, BlockHistory } from './storage';
-import { User, Interaction } from 'discord.js';
+import { openBalances, openState, BalanceMap, PersistedState, MemberResult, BlockHistory, GrumbleState } from './storage';
+import { User, Interaction, DiscordAPIError } from 'discord.js';
 
 // Ensure no duplicate runes - this will throw an error if duplicates are found
 const RAW_SYMBOLS = [
@@ -28,6 +28,10 @@ export interface GameRuntime {
     currentChoices: PlayerChoiceMap;
     isActive: boolean; // Soft stop/start flag
     onBlockAdvance?: (newBlock: number, botChoice: SymbolRune) => void;
+    // Auto-run configuration
+    autorunRemainingBlocks?: number | undefined;
+    notifyRoleId?: string | undefined;
+    notifyChannelId?: string | undefined;
 }
 
 export async function initGame(): Promise<GameRuntime> {
@@ -38,6 +42,9 @@ export async function initGame(): Promise<GameRuntime> {
         balances,
         currentChoices: state.data.currentChoices || {},
         isActive: true, // Bot starts as active
+        autorunRemainingBlocks: undefined,
+        notifyRoleId: process.env.DISCORD_NOTIFY_ROLE_ID,
+        notifyChannelId: process.env.DISCORD_NOTIFY_CHANNEL_ID,
     };
     return runtime;
 }
@@ -98,6 +105,11 @@ export async function setTotalRewards(runtime: GameRuntime, amount: number) {
     await runtime.state.write();
 }
 
+export async function setBaseReward(runtime: GameRuntime, amount: number) {
+    runtime.state.data.baseReward = amount;
+    await runtime.state.write();
+}
+
 export async function setBlockDuration(runtime: GameRuntime, seconds: number) {
     runtime.state.data.blockDurationSec = seconds;
     const now = Date.now();
@@ -111,8 +123,11 @@ export async function setCurrentBlock(runtime: GameRuntime, block: number) {
 }
 
 export function startTicker(runtime: GameRuntime): NodeJS.Timeout {
+    let resolving = false;
     const tick = async () => {
         if (Date.now() < (runtime.state.data.nextBlockAt ?? 0)) return;
+        if (resolving) return; // guard against concurrent resolution if tick overlaps
+        resolving = true;
         // Advance block
         const botChoice = pickRandomSymbol();
         await resolveBlock(runtime, botChoice);
@@ -124,22 +139,39 @@ export function startTicker(runtime: GameRuntime): NodeJS.Timeout {
         runtime.state.data.currentChoices = {};
         await runtime.state.write();
         runtime.onBlockAdvance?.(runtime.state.data.currentBlock, botChoice);
+        resolving = false;
     };
     return setInterval(tick, 1000);
 }
 
+// Batch file writes to reduce I/O operations
+let pendingStateWrite: NodeJS.Timeout | null = null;
+let pendingBalancesWrite: NodeJS.Timeout | null = null;
+
 export async function recordChoice(runtime: GameRuntime, userId: string, choice: SymbolRune) {
     runtime.currentChoices[userId] = choice;
     runtime.state.data.currentChoices = { ...runtime.currentChoices };
-    await runtime.state.write();
+    
+    // Batch the write operation to avoid excessive I/O
+    if (pendingStateWrite) {
+        clearTimeout(pendingStateWrite);
+    }
+    pendingStateWrite = setTimeout(async () => {
+        try {
+            await runtime.state.write();
+        } catch (error) {
+            console.error('Error writing state:', error);
+        }
+        pendingStateWrite = null;
+    }, 100); // Batch writes within 100ms
 }
 
 export async function resolveBlock(runtime: GameRuntime, botChoice: SymbolRune) {
     const winners = Object.entries(runtime.currentChoices);
     if (winners.length === 0) return;
     
-    // Base reward is 1000 GLYPHS per block
-    const baseReward = 1000000;
+    // Use configurable base reward from state
+    const baseReward = runtime.state.data.baseReward ?? 1000000;
     const currentBlock = runtime.state.data.currentBlock;
     
     // Store historical data for this block
@@ -170,12 +202,21 @@ export async function resolveBlock(runtime: GameRuntime, botChoice: SymbolRune) 
     
     runtime.state.data.blockHistory.push(blockHistory);
     
-    // Keep only last 10 blocks of history to prevent data bloat
-    if (runtime.state.data.blockHistory.length > 10) {
-        runtime.state.data.blockHistory = runtime.state.data.blockHistory.slice(-10);
-    }
+    // Keep all block history for accurate leaderboard calculations
+    // Removed the 10-block limit to preserve complete game history
     
-    await runtime.balances.write();
+    // Batch the balances write operation
+    if (pendingBalancesWrite) {
+        clearTimeout(pendingBalancesWrite);
+    }
+    pendingBalancesWrite = setTimeout(async () => {
+        try {
+            await runtime.balances.write();
+        } catch (error) {
+            console.error('Error writing balances:', error);
+        }
+        pendingBalancesWrite = null;
+    }, 100); // Batch writes within 100ms
 }
 
 export function getBalance(runtime: GameRuntime, userId: string): number {
@@ -242,49 +283,99 @@ export function getUserRewardRecords(runtime: GameRuntime, userId: string): stri
     return info;
 }
 
+// Cache for leaderboard data to reduce computation
+let leaderboardCache: { 
+    data: string; 
+    expiresAt: number; 
+    lastBlockNumber: number;
+    lastBalanceHash: string;
+} | null = null;
+
 export async function getLeaderboard(runtime: GameRuntime, interaction: Interaction): Promise<string> {
-    // Gather stats for all users who have ever participated
-    const userStats: Record<string, {
-        balance: number,
-        picks: Record<string, number>,
-        exactMatches: number
-    }> = {};
-    // Go through all block history
-    for (const block of runtime.state.data.blockHistory) {
-        for (const result of block.memberResults) {
-            if (!userStats[result.userId]) {
-                userStats[result.userId] = { balance: 0, picks: {}, exactMatches: 0 };
-            }
-            const stats = userStats[result.userId];
-            if (stats) {
-                stats.balance = runtime.balances.data[result.userId] ?? 0;
-                stats.picks[result.choice] = (stats.picks[result.choice] || 0) + 1;
-                if (result.distance === 0) stats.exactMatches++;
+    try {
+        // Check if we can use cached data
+        const currentBlockNumber = runtime.state.data.currentBlock;
+        const balanceHash = JSON.stringify(runtime.balances.data);
+        const now = Date.now();
+        
+        if (leaderboardCache && 
+            leaderboardCache.expiresAt > now && 
+            leaderboardCache.lastBlockNumber === currentBlockNumber &&
+            leaderboardCache.lastBalanceHash === balanceHash) {
+            return leaderboardCache.data;
+        }
+        
+        // Gather stats for all users who have ever participated
+        const userStats: Record<string, {
+            balance: number,
+            picks: Record<string, number>,
+            exactMatches: number
+        }> = {};
+        // Go through all block history
+        for (const block of runtime.state.data.blockHistory) {
+            for (const result of block.memberResults) {
+                if (!userStats[result.userId]) {
+                    userStats[result.userId] = { balance: 0, picks: {}, exactMatches: 0 };
+                }
+                const stats = userStats[result.userId];
+                if (stats) {
+                    stats.balance = runtime.balances.data[result.userId] ?? 0;
+                    stats.picks[result.choice] = (stats.picks[result.choice] || 0) + 1;
+                    if (result.distance === 0) stats.exactMatches++;
+                }
             }
         }
-    }
-    // If no data
-    if (Object.keys(userStats).length === 0) return 'No leaderboard data yet.';
-    // Sort by exact matches, then balance
-    const sorted = Object.entries(userStats).sort((a, b) => {
-        if (b[1].exactMatches !== a[1].exactMatches) return b[1].exactMatches - a[1].exactMatches;
-        return b[1].balance - a[1].balance;
-    });
-    // Prepare leaderboard lines
-    let lines = '**Leaderboard (Top 10 by Exact Matches):**\n\n';
-    let rank = 1;
-    let userIdToUsername: Record<string, string> = {};
-    // Fetch usernames for top 10 and the requesting user
-    const topUserIds = sorted.slice(0, 10).map(([uid]) => uid);
-    if (!topUserIds.includes(interaction.user.id)) topUserIds.push(interaction.user.id);
-    for (const uid of topUserIds) {
-        try {
-            const user = await interaction.client.users.fetch(uid);
-            userIdToUsername[uid] = user.username;
-        } catch {
-            userIdToUsername[uid] = uid;
+        // If no data
+        if (Object.keys(userStats).length === 0) return 'No leaderboard data yet.';
+        // Sort by exact matches, then balance
+        const sorted = Object.entries(userStats).sort((a, b) => {
+            if (b[1].exactMatches !== a[1].exactMatches) return b[1].exactMatches - a[1].exactMatches;
+            return b[1].balance - a[1].balance;
+        });
+        // Prepare leaderboard lines
+        let lines = '**Leaderboard (Top 10 by Exact Matches):**\n\n';
+        let rank = 1;
+        let userIdToUsername: Record<string, string> = {};
+        // Fetch usernames for top 10 and the requesting user
+        const topUserIds = sorted.slice(0, 10).map(([uid]) => uid);
+        if (!topUserIds.includes(interaction.user.id)) topUserIds.push(interaction.user.id);
+        
+        // Only try to fetch real Discord user IDs (those that look like Discord snowflakes)
+        const discordUserIds = topUserIds.filter(uid => /^\d{17,19}$/.test(uid));
+        
+        // Batch fetch users to reduce API calls and improve performance
+        const fetchPromises = discordUserIds.map(async (uid) => {
+            try {
+                const user = await interaction.client.users.fetch(uid);
+                return { uid, username: user.username };
+            } catch (error) {
+                if (error instanceof DiscordAPIError) {
+                    if (error.code === 10013) { // Unknown User
+                        console.warn(`User ${uid} no longer exists (deleted account)`);
+                    } else if (error.code === 50013) { // Missing Permissions
+                        console.warn(`Bot missing permissions to fetch user ${uid}:`, error.message);
+                    } else {
+                        console.warn(`Discord API error fetching user ${uid}:`, error.code, error.message);
+                    }
+                } else {
+                    console.warn(`Failed to fetch user ${uid}:`, error);
+                }
+                return { uid, username: uid };
+            }
+        });
+        
+        // Wait for all user fetches to complete in parallel
+        const userResults = await Promise.all(fetchPromises);
+        for (const result of userResults) {
+            userIdToUsername[result.uid] = result.username;
         }
-    }
+        
+        // For non-Discord user IDs (like simulation users), just use the ID as display name
+        for (const uid of topUserIds) {
+            if (!userIdToUsername[uid]) {
+                userIdToUsername[uid] = uid;
+            }
+        }
     for (let i = 0; i < Math.min(10, sorted.length); i++) {
         const entry = sorted[i];
         if (!entry) continue;
@@ -312,7 +403,148 @@ export async function getLeaderboard(runtime: GameRuntime, interaction: Interact
             lines += `\nYour Rank: ${sorted.findIndex(([uid]) => uid === interaction.user.id) + 1}. **${userIdToUsername[interaction.user.id]}** | Balance: ${stats.balance.toLocaleString()} | Most Picked: ${mostPicked} | Exact Matches: ${stats.exactMatches}\n`;
         }
     }
+    
+    // Cache the result for 30 seconds
+    leaderboardCache = {
+        data: lines,
+        expiresAt: now + 30000, // 30 seconds
+        lastBlockNumber: currentBlockNumber,
+        lastBalanceHash: balanceHash
+    };
+    
     return lines;
+    } catch (error) {
+        if (error instanceof DiscordAPIError) {
+            console.error('Discord API error generating leaderboard:', error.code, error.message);
+        } else {
+            console.error('Error generating leaderboard:', error);
+        }
+        return 'Error generating leaderboard. Please try again.';
+    }
+}
+
+// Grumble state persistence functions
+export async function saveGrumbleState(runtime: GameRuntime, grumbleState: GrumbleState | null) {
+    runtime.state.data.grumbleState = grumbleState;
+    
+    // Batch the write operation to avoid excessive I/O
+    if (pendingStateWrite) {
+        clearTimeout(pendingStateWrite);
+    }
+    pendingStateWrite = setTimeout(async () => {
+        try {
+            await runtime.state.write();
+        } catch (error) {
+            console.error('Error writing grumble state:', error);
+        }
+        pendingStateWrite = null;
+    }, 100); // Batch writes within 100ms
+}
+
+export function getGrumbleState(runtime: GameRuntime): GrumbleState | null {
+    return runtime.state.data.grumbleState;
+}
+
+export async function clearGrumbleState(runtime: GameRuntime) {
+    runtime.state.data.grumbleState = null;
+    
+    // Batch the write operation to avoid excessive I/O
+    if (pendingStateWrite) {
+        clearTimeout(pendingStateWrite);
+    }
+    pendingStateWrite = setTimeout(async () => {
+        try {
+            await runtime.state.write();
+        } catch (error) {
+            console.error('Error clearing grumble state:', error);
+        }
+        pendingStateWrite = null;
+    }, 100); // Batch writes within 100ms
+}
+
+export function isGrumbleActive(runtime: GameRuntime): boolean {
+    const grumbleState = runtime.state.data.grumbleState;
+    return grumbleState !== null && grumbleState.isActive;
+}
+
+export function shouldGrumbleEnd(runtime: GameRuntime): boolean {
+    const grumbleState = runtime.state.data.grumbleState;
+    if (!grumbleState || !grumbleState.isActive) return false;
+    
+    // If using custom timer, check if timer has expired
+    if (grumbleState.customTimerSec && grumbleState.customTimerEndsAt) {
+        return Date.now() >= grumbleState.customTimerEndsAt;
+    }
+    
+    // Otherwise, use block-based timing
+    return runtime.state.data.currentBlock > grumbleState.blockNumber;
+}
+
+export function getGrumbleTimeLeft(runtime: GameRuntime): number {
+    const grumbleState = runtime.state.data.grumbleState;
+    if (!grumbleState || !grumbleState.isActive) return 0;
+    
+    // If using custom timer, return time left for custom timer
+    if (grumbleState.customTimerSec && grumbleState.customTimerEndsAt) {
+        return Math.max(0, grumbleState.customTimerEndsAt - Date.now());
+    }
+    
+    // Otherwise, return time left for next block
+    return timeLeftMs(runtime);
+}
+
+export function isGrumbleUsingCustomTimer(runtime: GameRuntime): boolean {
+    const grumbleState = runtime.state.data.grumbleState;
+    return grumbleState !== null && grumbleState.isActive && 
+           grumbleState.customTimerSec !== undefined && 
+           grumbleState.customTimerEndsAt !== undefined;
+}
+
+export async function setUserGlyphs(runtime: GameRuntime, userId: string, amount: number): Promise<number> {
+    runtime.balances.data[userId] = amount;
+    
+    // Batch the write operation to avoid excessive I/O
+    if (pendingBalancesWrite) {
+        clearTimeout(pendingBalancesWrite);
+    }
+    pendingBalancesWrite = setTimeout(async () => {
+        try {
+            await runtime.balances.write();
+        } catch (error) {
+            console.error('Error writing user glyphs:', error);
+        }
+        pendingBalancesWrite = null;
+    }, 100); // Batch writes within 100ms
+    
+    return amount;
+}
+
+export function getUserBetInfo(runtime: GameRuntime, userId: string): string {
+    let info = "**Your Current Bets:**\n\n";
+    
+    // Check regular mining bet
+    const miningChoice = runtime.currentChoices[userId];
+    if (miningChoice) {
+        info += `**Mining Bet:** ${miningChoice}\n`;
+    } else {
+        info += `**Mining Bet:** No bet placed\n`;
+    }
+    
+    // Check grumble bet
+    const grumbleState = runtime.state.data.grumbleState;
+    if (grumbleState && grumbleState.isActive && grumbleState.bets[userId]) {
+        const grumbleBet = grumbleState.bets[userId];
+        info += `**Grumble Bet:** ${grumbleBet.guess} (${grumbleBet.amount.toLocaleString()} GLYPHS)\n`;
+    } else {
+        info += `**Grumble Bet:** No bet placed\n`;
+    }
+    
+    // If no bets at all
+    if (!miningChoice && (!grumbleState || !grumbleState.isActive || !grumbleState.bets[userId])) {
+        info = "**Your Current Bets:**\n\nNo bets placed for this block.";
+    }
+    
+    return info;
 }
 
 

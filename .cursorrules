@@ -1,0 +1,31 @@
+# Cursor AI Rules for Glyphs Bot 1
+
+## Project Scope
+- This AI agent should ONLY work within the "Glyphs Bot 1" project folder
+- Do not access or modify files outside of this project directory
+- Focus all operations on files within: D:\Cursor Project\Glyphs Bot 1\
+
+## Project Context
+- This is a Discord bot for a glyphs guessing game
+- Main source files are in the `src/` directory
+- Built files are in the `dist/` directory
+- Data files are in the `data/` directory
+
+## Restrictions
+- Never access files from "Glyphs Bot Game" or "Trainer" projects
+- Do not suggest changes that would affect other projects
+- Keep all file operations scoped to this project only
+
+## File Structure
+- src/: TypeScript source files
+- dist/: Compiled JavaScript files
+- data/: JSON data files (balances.json, state.json)
+- logs/: Application logs
+
+## Coding Standards
+- Follow TypeScript best practices
+- Use existing project structure and conventions
+- Fix type errors immediately
+- Clean up unused code
+- Add comments for complex logic
+- Prioritize clean, maintainable code

@@ -1,0 +1,15 @@
+# Ignore other project folders
+../Glyphs Bot Game/
+../Trainer/
+
+# Ignore common files that shouldn't be processed
+node_modules/
+*.log
+.env
+.DS_Store
+Thumbs.db
+
+# Ignore build artifacts that shouldn't be edited directly
+dist/
+*.js.map
+*.d.ts.map

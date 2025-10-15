@@ -6,6 +6,19 @@ export interface MemberResult {
     reward: number;
     distance: number;
 }
+export interface GrumbleState {
+    prizePool: number;
+    bets: Record<string, {
+        amount: number;
+        guess: string;
+    }>;
+    messageId: string | null;
+    channelId: string | null;
+    blockNumber: number;
+    isActive: boolean;
+    customTimerSec?: number;
+    customTimerEndsAt?: number;
+}
 export interface BlockHistory {
     blockNumber: number;
     botChoice: string;
@@ -15,10 +28,13 @@ export interface BlockHistory {
 export interface PersistedState {
     currentBlock: number;
     totalRewardsPerBlock: number;
+    baseReward: number;
     blockDurationSec: number;
     nextBlockAt: number;
     lastBotChoice?: string | undefined;
     blockHistory: BlockHistory[];
+    currentChoices: Record<string, string>;
+    grumbleState: GrumbleState | null;
 }
 export interface DBSchema {
     state: PersistedState;

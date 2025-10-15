@@ -12,6 +12,18 @@ export interface MemberResult {
     distance: number;
 }
 
+export interface GrumbleState {
+    prizePool: number;
+    bets: Record<string, { amount: number; guess: string }>;
+    messageId: string | null;
+    channelId: string | null;
+    blockNumber: number;
+    isActive: boolean;
+    // Timer settings for custom grumble timing
+    customTimerSec?: number; // Custom timer in seconds (undefined = use block timing)
+    customTimerEndsAt?: number; // When custom timer ends (epoch ms)
+}
+
 export interface BlockHistory {
     blockNumber: number;
     botChoice: string;
@@ -27,14 +39,17 @@ export interface BlockHistory {
 // - lastBotChoice?: string
 // - blockHistory: BlockHistory[]
 // - currentChoices: Record<string, string> // NEW: persists miners' choices for the current block
+// - grumbleState: GrumbleState | null // NEW: persists grumble game state
 export interface PersistedState {
     currentBlock: number;
     totalRewardsPerBlock: number;
+    baseReward: number; // Used for per-user reward calculation tiers
     blockDurationSec: number;
     nextBlockAt: number; // epoch ms
     lastBotChoice?: string | undefined;
     blockHistory: BlockHistory[];
     currentChoices: Record<string, string>; // Persist miners' choices
+    grumbleState: GrumbleState | null; // Persist grumble game state
 }
 
 export interface DBSchema {
@@ -52,14 +67,19 @@ export async function openState(): Promise<Low<PersistedState>> {
     const db = new Low<PersistedState>(adapter, {
         currentBlock: 1,
         totalRewardsPerBlock: 700_000,
+        baseReward: 1_000_000,
         blockDurationSec: 30,
         nextBlockAt: Date.now() + 30 * 1000,
         blockHistory: [],
         currentChoices: {}, // Default empty
+        grumbleState: null, // Default no active grumble
     });
     await db.read();
     // Ensure currentChoices exists if loading from old state
     if (!db.data.currentChoices) db.data.currentChoices = {};
+    if (typeof db.data.baseReward !== 'number') db.data.baseReward = 1_000_000;
+    // Ensure grumbleState exists if loading from old state
+    if (!db.data.grumbleState) db.data.grumbleState = null;
     await db.write();
     return db;
 }
