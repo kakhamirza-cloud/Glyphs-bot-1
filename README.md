@@ -1,117 +1,174 @@
-# E9 Trainer Bot
+# Glyphs Bot 1
 
-A Discord bot for the E9 creature collection and battle system. Players can catch E9 creatures, manage their collection, and battle other players in turn-based combat.
+A Discord bot for a glyphs guessing game where players predict the next block's symbol and earn rewards based on accuracy. Features a comprehensive leaderboard system, grumble betting mechanics, and real-time block updates.
 
 ## Features
 
-- **Creature Catching**: Catch random E9 creatures with different rarities (Common, Uncommon, Rare, Epic, Legendary)
-- **Collection Management**: Store up to 3 creatures in your inventory
-- **Smart Replacement**: When catching better tier creatures, get options to replace lower-tier ones
-- **Challenge-Based Battles**: Challenge other players to battles with creature selection
-- **Automatic Combat**: Turn-based battle system with damage calculations
-- **Creature Progression**: Win battles to level up your creatures
-- **Battle Restrictions**: Each player can only have one active battle at a time
+- **Block Prediction Game**: Players guess the next block's symbol from a set of 22 runes
+- **Distance-Based Rewards**: Rewards based on how close your guess is to the actual symbol
+- **Exact Match Bonuses**: Special rewards for perfect predictions
+- **Grumble Betting**: Risk your balance for higher rewards with betting mechanics
+- **Comprehensive Leaderboards**: Track exact matches and overall performance
+- **Real-Time Updates**: Automatic block generation and reward distribution
+- **Persistent Data**: All game state and balances saved locally
+- **Railway Deployment Ready**: Configured for cloud deployment with health monitoring
 
 ## Setup
 
+### Local Development
+
 1. Create a Discord application and bot, enable Privileged Gateway Intents (Guilds and Guild Messages required).
-2. Copy `.env.example` to `.env` and fill values.
+2. Copy `.env.example` to `.env` and fill in your Discord bot credentials.
 3. Install packages and build:
-   - `npm i`
-   - `npm run build`
+   ```bash
+   npm install
+   npm run build
+   ```
 4. Register slash commands:
-   - Guild scoped: set `DISCORD_GUILD_ID` in `.env`, then `npm run register`
+   ```bash
+   npm run register
+   ```
 5. Start the bot:
-   - Dev: `npm run dev`
-   - Prod: `npm start`
-   - PM2: `npm run pm2:start`
+   - Development: `npm run dev`
+   - Production: `npm start`
+   - PM2: `pm2 start ecosystem.config.js`
+
+### Railway Deployment
+
+The bot is fully configured for Railway deployment:
+
+1. **Connect Repository**: Link your GitHub repository to Railway
+2. **Set Environment Variables**: Add all required Discord credentials in Railway dashboard
+3. **Deploy**: Railway will automatically build and deploy using the `railway.json` configuration
+4. **Health Monitoring**: Built-in health check endpoint at `/health`
 
 ## Environment Variables
 
-```
-DISCORD_TOKEN=your_bot_token
-DISCORD_CLIENT_ID=your_bot_client_id
-# Optional: if set, register commands to a single guild for fast propagation
-DISCORD_GUILD_ID=your_guild_id
-# Optional: comma-separated list of admin user IDs
-ADMIN_USER_IDS=user_id1,user_id2
+```env
+# Discord Bot Configuration
+DISCORD_TOKEN=your_discord_bot_token_here
+DISCORD_CLIENT_ID=your_discord_client_id_here
+DISCORD_GUILD_ID=your_discord_guild_id_here
+DISCORD_NOTIFY_ROLE_ID=your_notification_role_id_here
+DISCORD_NOTIFY_CHANNEL_ID=your_notification_channel_id_here
+
+# Environment
+NODE_ENV=production
+KEEP_ALIVE=1
+PORT=3000
 ```
 
 ## Commands
 
-### Creature Commands
-- **`/catch`** - Attempt to catch a random E9 creature (50% base catch rate)
-- **`/inventory`** - View your creature collection and stats
-- **`/replace creature_number:<int>`** - Legacy command for creature replacement (use buttons instead)
+### Game Commands
+- **`/start`** - Start playing the glyphs game
+- **`/stop`** - Stop the current game session
+- **`/balance`** - Check your current balance
+- **`/leaderboard`** - View the current leaderboard
+- **`/finalleaderboard`** - View the final leaderboard with all-time stats
 
-### Battle Commands
-- **`/battle opponent:<user>`** - Challenge another user to battle
-- **`/accept`** - Accept a pending battle challenge
-- **`/decline`** - Decline a pending battle challenge
+### Grumble Commands
+- **`/grumble`** - Start a grumble betting session
+- **`/grumblestop`** - Stop the current grumble session
 
 ### Admin Commands
-- **`/resetinventory`** - Reset your inventory (removes all creatures and stats) - Admin only
+- **`/simulate`** - Simulate multiple users for testing (Admin only)
 
 ## Game Features
 
-### Creature System
-- **Rarity Tiers**: Common (60% catch rate), Uncommon (40%), Rare (25%), Epic (15%), Legendary (5%)
-- **Base Stats**: HP, Attack, Defense that vary by rarity
-- **Collection Limit**: Maximum 3 creatures per player
-- **Smart Replacement**: When catching better tier creatures, get button options to replace lower-tier ones
+### Block Prediction System
+- **22 Rune Symbols**: Players choose from a grid of 22 different rune symbols
+- **Distance Calculation**: Rewards based on symbol distance (0 = exact match, 1-11 = partial match)
+- **Automatic Blocks**: New blocks generated automatically with random symbols
+- **Reward Distribution**: Automatic balance updates based on prediction accuracy
 
-### Battle System
-- **Challenge Flow**: 
-  1. Player A uses `/battle @PlayerB`
-  2. Player A selects their creature from buttons
-  3. Player B receives notification and uses `/accept` or `/decline`
-  4. If accepted, Player B selects their creature
-  5. Battle runs automatically with turn-based combat
-- **Battle Restrictions**: Each player can only have one active battle at a time
-- **Combat Mechanics**: 
-  - Turn-based attacks with damage calculations
-  - Defense reduces incoming damage
-  - Random damage variation for unpredictability
-- **Battle Results**:
-  - Winner's creature levels up (gains HP, Attack, Defense)
-  - Loser's creature can die and be removed from inventory
-  - Battle stats are tracked (total battles, wins)
+### Reward System
+- **Exact Match**: Highest reward for perfect predictions (distance = 0)
+- **Partial Match**: Decreasing rewards based on symbol distance
+- **Base Rewards**: Configurable reward amounts for different distance levels
+- **Balance Tracking**: Persistent balance storage across sessions
 
-### Creature Progression
-- **Leveling**: Creatures gain levels by winning battles
-- **Stat Growth**: Each level up increases HP, Attack, and Defense randomly
-- **Experience Reset**: Experience resets to 0 after leveling up
+### Grumble Betting
+- **Risk/Reward**: Bet your balance for higher potential rewards
+- **Symbol Selection**: Choose specific symbols to bet on
+- **Amount Control**: Set custom bet amounts
+- **Session Management**: Start/stop grumble sessions as needed
+
+### Leaderboard System
+- **Exact Match Tracking**: Counts perfect predictions for each player
+- **All-Time History**: Maintains complete block history (no 10-block limit)
+- **Real-Time Updates**: Leaderboard updates after each block
+- **Performance Metrics**: Tracks individual player statistics
 
 ## Game Logic
 
-### Creature Catching
-- **Base Catch Rate**: 50% chance to catch any creature
-- **Rarity Modifiers**: Each creature has its own catch rate (Common: 60%, Uncommon: 40%, Rare: 25%, Epic: 15%, Legendary: 5%)
-- **Final Catch Rate**: Minimum of 50% and creature's individual catch rate
-- **Collection Management**: Players can hold up to 3 creatures maximum
+### Symbol Distance Calculation
+- **Distance Formula**: Calculates numerical distance between symbols
+- **Reward Scaling**: Rewards decrease as distance increases
+- **Exact Match Bonus**: Special handling for distance = 0
 
-### Battle Mechanics
-- **Turn Order**: Challenger attacks first, then opponent
-- **Damage Calculation**: `max(1, attack - defense/2 + random(-5 to +5))`
-- **Battle Length**: Maximum 20 rounds to prevent infinite battles
-- **Creature Death**: If a creature's HP reaches 0, it's removed from the player's inventory
-- **Level Up Rewards**: 
-  - HP increase: 5-14 points
-  - Attack increase: 2-6 points  
-  - Defense increase: 2-6 points
+### Block Generation
+- **Random Selection**: Each block uses a random symbol from the 22 available
+- **Automatic Timing**: Blocks generated on a configurable schedule
+- **History Tracking**: Complete block history maintained for leaderboards
 
-### Challenge System
-- **One Battle Limit**: Each player can only have one active battle at a time
-- **Challenge Timeout**: 60 seconds to select creatures, 5 minutes for pending challenges
-- **Automatic Cleanup**: Expired challenges are automatically removed
-- **State Persistence**: Challenge data is saved and survives bot restarts
+### Data Persistence
+- **JSON Storage**: Uses `lowdb` with JSON files for data persistence
+- **Balance Tracking**: `data/balances.json` stores all player balances
+- **Game State**: `data/state.json` stores block history and game state
+- **Automatic Saves**: Data saved after each significant game event
 
-### Data Storage
-- **Database**: `data/database.json` (user inventories, pending creatures, active challenges)
-- **User Data**: Creature collections, battle stats, total caught count
-- **Challenge Data**: Active battles, creature selections, battle results
-- **Automatic Migration**: System enforces 3-creature limit on existing data
+## Technical Details
 
+### Architecture
+- **TypeScript**: Full TypeScript implementation with proper type safety
+- **Discord.js v14**: Modern Discord API integration
+- **Express.js**: Health check server for Railway monitoring
+- **LowDB**: Lightweight JSON database for data persistence
 
+### Railway Deployment
+- **Health Checks**: `/health` endpoint for Railway monitoring
+- **Port Configuration**: Configurable port (default 3000)
+- **Build Process**: Automatic TypeScript compilation
+- **Environment Variables**: Secure credential management
 
+### Performance
+- **Efficient Storage**: JSON-based storage with minimal overhead
+- **Memory Management**: Optimized data structures for game state
+- **Error Handling**: Comprehensive error handling and logging
+- **Process Management**: PM2 integration for production deployment
 
+## File Structure
+
+```
+src/
+├── index.ts          # Main bot entry point with Discord client
+├── commands.ts       # Slash command handlers
+├── game.ts          # Core game logic and state management
+├── storage.ts       # Data persistence and database operations
+├── ui.ts            # Discord UI components (buttons, menus)
+└── register-commands.ts # Slash command registration
+
+data/
+├── balances.json    # Player balance data
+└── state.json       # Game state and block history
+
+dist/                # Compiled JavaScript files
+logs/                # Application logs
+```
+
+## Recent Updates
+
+- ✅ **Leaderboard Fix**: Removed 10-block history limit - now shows all-time stats
+- ✅ **Railway Deployment**: Added Express health check server and Railway configuration
+- ✅ **Repository Cleanup**: Removed accidentally tracked node_modules and dist files
+- ✅ **Security**: Proper .env file handling and gitignore configuration
+- ✅ **Documentation**: Complete deployment guides and checklists
+
+## Support
+
+For issues or questions:
+1. Check the logs in the `logs/` directory
+2. Verify environment variables are correctly set
+3. Ensure Discord bot has proper permissions
+4. Check Railway deployment status if using cloud deployment
