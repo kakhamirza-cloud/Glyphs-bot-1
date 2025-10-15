@@ -1,7 +1,5 @@
-import { Low } from 'lowdb';
-import { JSONFile } from 'lowdb/node';
-import { join } from 'node:path';
-import { existsSync, mkdirSync } from 'node:fs';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export type BalanceMap = Record<string, number>;
 
@@ -57,46 +55,105 @@ export interface DBSchema {
     balances: BalanceMap;
 }
 
-const dataDir = join(process.cwd(), 'data');
-const stateFile = join(dataDir, 'state.json');
-const balancesFile = join(dataDir, 'balances.json');
+const dataDir = path.join(process.cwd(), 'data');
+const stateFile = path.join(dataDir, 'state.json');
+const balancesFile = path.join(dataDir, 'balances.json');
 
-export async function openState(): Promise<Low<PersistedState>> {
-    ensureDir();
-    const adapter = new JSONFile<PersistedState>(stateFile);
-    const db = new Low<PersistedState>(adapter, {
-        currentBlock: 1,
-        totalRewardsPerBlock: 700_000,
-        baseReward: 1_000_000,
-        blockDurationSec: 30,
-        nextBlockAt: Date.now() + 30 * 1000,
-        blockHistory: [],
-        currentChoices: {}, // Default empty
-        grumbleState: null, // Default no active grumble
-    });
-    await db.read();
-    // Ensure currentChoices exists if loading from old state
-    if (!db.data.currentChoices) db.data.currentChoices = {};
-    if (typeof db.data.baseReward !== 'number') db.data.baseReward = 1_000_000;
-    // Ensure grumbleState exists if loading from old state
-    if (!db.data.grumbleState) db.data.grumbleState = null;
-    await db.write();
-    return db;
-}
+export class StorageManager {
+    private stateData: PersistedState;
+    private balancesData: BalanceMap;
 
-export async function openBalances(): Promise<Low<BalanceMap>> {
-    ensureDir();
-    const adapter = new JSONFile<BalanceMap>(balancesFile);
-    const db = new Low<BalanceMap>(adapter, {});
-    await db.read();
-    await db.write();
-    return db;
-}
-
-export function ensureDir(): void {
-    if (!existsSync(dataDir)) {
-        mkdirSync(dataDir, { recursive: true });
+    constructor() {
+        this.ensureDir();
+        this.stateData = this.loadState();
+        this.balancesData = this.loadBalances();
     }
+
+    private ensureDir(): void {
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+    }
+
+    private loadState(): PersistedState {
+        try {
+            if (fs.existsSync(stateFile)) {
+                const data = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+                // Ensure currentChoices exists if loading from old state
+                if (!data.currentChoices) data.currentChoices = {};
+                if (typeof data.baseReward !== 'number') data.baseReward = 1_000_000;
+                // Ensure grumbleState exists if loading from old state
+                if (!data.grumbleState) data.grumbleState = null;
+                return data;
+            }
+        } catch (error) {
+            console.error('Error loading state:', error);
+        }
+        
+        // Default state
+        return {
+            currentBlock: 1,
+            totalRewardsPerBlock: 700_000,
+            baseReward: 1_000_000,
+            blockDurationSec: 30,
+            nextBlockAt: Date.now() + 30 * 1000,
+            blockHistory: [],
+            currentChoices: {},
+            grumbleState: null,
+        };
+    }
+
+    private loadBalances(): BalanceMap {
+        try {
+            if (fs.existsSync(balancesFile)) {
+                return JSON.parse(fs.readFileSync(balancesFile, 'utf8'));
+            }
+        } catch (error) {
+            console.error('Error loading balances:', error);
+        }
+        return {};
+    }
+
+    getState(): PersistedState {
+        return this.stateData;
+    }
+
+    getBalances(): BalanceMap {
+        return this.balancesData;
+    }
+
+    async writeState(): Promise<void> {
+        try {
+            fs.writeFileSync(stateFile, JSON.stringify(this.stateData, null, 2));
+        } catch (error) {
+            console.error('Error writing state:', error);
+        }
+    }
+
+    async writeBalances(): Promise<void> {
+        try {
+            fs.writeFileSync(balancesFile, JSON.stringify(this.balancesData, null, 2));
+        } catch (error) {
+            console.error('Error writing balances:', error);
+        }
+    }
+}
+
+// Legacy compatibility functions
+export async function openState(): Promise<{ data: PersistedState; write(): Promise<void> }> {
+    const storage = new StorageManager();
+    return {
+        data: storage.getState(),
+        write: () => storage.writeState()
+    };
+}
+
+export async function openBalances(): Promise<{ data: BalanceMap; write(): Promise<void> }> {
+    const storage = new StorageManager();
+    return {
+        data: storage.getBalances(),
+        write: () => storage.writeBalances()
+    };
 }
 
 

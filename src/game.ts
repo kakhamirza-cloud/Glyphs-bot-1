@@ -1,5 +1,4 @@
 import dayjs from 'dayjs';
-import { Low } from 'lowdb';
 import { openBalances, openState, BalanceMap, PersistedState, MemberResult, BlockHistory, GrumbleState } from './storage';
 import { User, Interaction, DiscordAPIError } from 'discord.js';
 
@@ -23,8 +22,8 @@ export type SymbolRune = typeof SYMBOLS[number];
 export interface PlayerChoiceMap { [userId: string]: SymbolRune; }
 
 export interface GameRuntime {
-    state: Low<PersistedState>;
-    balances: Low<BalanceMap>;
+    state: { data: PersistedState; write(): Promise<void> };
+    balances: { data: BalanceMap; write(): Promise<void> };
     currentChoices: PlayerChoiceMap;
     isActive: boolean; // Soft stop/start flag
     onBlockAdvance?: (newBlock: number, botChoice: SymbolRune) => void;
@@ -237,7 +236,7 @@ export function getLastBlockRewardInfo(runtime: GameRuntime): string {
     }
     
     // Find the last block's history
-    const lastBlockHistory = runtime.state.data.blockHistory.find(h => h.blockNumber === lastBlock);
+    const lastBlockHistory = runtime.state.data.blockHistory.find((h: BlockHistory) => h.blockNumber === lastBlock);
     
     if (!lastBlockHistory || lastBlockHistory.memberResults.length === 0) {
         return "No member data available for the last block.";
@@ -246,7 +245,7 @@ export function getLastBlockRewardInfo(runtime: GameRuntime): string {
     let info = `**Block ${lastBlock} Member Results:**\n\n`;
     
     // Sort members by reward (highest first)
-    const sortedResults = lastBlockHistory.memberResults.sort((a, b) => b.reward - a.reward);
+    const sortedResults = lastBlockHistory.memberResults.sort((a: MemberResult, b: MemberResult) => b.reward - a.reward);
     
     for (const result of sortedResults) {
         info += `• **<@${result.userId}>** chose ${result.choice} → ${result.reward.toLocaleString()} GLYPHS\n`;
@@ -257,8 +256,8 @@ export function getLastBlockRewardInfo(runtime: GameRuntime): string {
 
 export function getUserRewardRecords(runtime: GameRuntime, userId: string): string {
     const userHistory = runtime.state.data.blockHistory
-        .filter(block => block.memberResults.some(result => result.userId === userId))
-        .sort((a, b) => b.blockNumber - a.blockNumber); // Most recent first
+        .filter((block: BlockHistory) => block.memberResults.some((result: MemberResult) => result.userId === userId))
+        .sort((a: BlockHistory, b: BlockHistory) => b.blockNumber - a.blockNumber); // Most recent first
     
     if (userHistory.length === 0) {
         return "You haven't participated in any blocks yet.";
@@ -268,7 +267,7 @@ export function getUserRewardRecords(runtime: GameRuntime, userId: string): stri
     let totalEarned = 0;
     
     for (const block of userHistory) {
-        const userResult = block.memberResults.find(result => result.userId === userId);
+        const userResult = block.memberResults.find((result: MemberResult) => result.userId === userId);
         if (userResult) {
             info += `**Block ${block.blockNumber}:**\n`;
             info += `• Bot chose: ${block.botChoice}\n`;
