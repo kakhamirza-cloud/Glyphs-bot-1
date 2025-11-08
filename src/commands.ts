@@ -96,7 +96,7 @@ export async function handleSlash(interaction: ChatInputCommandInteraction, runt
         if (packs <= 0) {
             return safeReply('You have no packs to open. Buy one from the market first.', { flags: MessageFlags.Ephemeral });
         }
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply(); // public reply so everyone can see results
         try {
             let roleIds: string[] = [];
             if (interaction.guild) {
@@ -137,7 +137,7 @@ export async function handleSlash(interaction: ChatInputCommandInteraction, runt
                 }
             }
 
-            await interaction.editReply({ embeds: [embed] });
+            await interaction.editReply({ embeds: [embed], content: `${interaction.user} opened a market pack!` });
         } catch (error) {
             console.error('Error opening pack:', error);
             await interaction.editReply('Failed to open pack. Please try again shortly.');
