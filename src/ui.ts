@@ -20,9 +20,11 @@ export function buildPanel(runtime: GameRuntime) {
     const lastRewardBtn = new ButtonBuilder().setCustomId('lastreward').setLabel('Last Block Reward').setStyle(ButtonStyle.Secondary);
     const rewardRecordsBtn = new ButtonBuilder().setCustomId('rewardrecords').setLabel('Reward Records').setStyle(ButtonStyle.Secondary);
     const leaderboardBtn = new ButtonBuilder().setCustomId('leaderboard').setLabel('Leaderboard').setStyle(ButtonStyle.Secondary);
+    const marketBtn = new ButtonBuilder().setCustomId('market').setLabel('Market').setStyle(ButtonStyle.Success);
     
-    // All buttons fit in one row now (5 buttons max)
-    const rows = [new ActionRowBuilder<ButtonBuilder>().addComponents(mineBtn, balanceBtn, lastRewardBtn, rewardRecordsBtn, leaderboardBtn)];
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(mineBtn, balanceBtn, lastRewardBtn, rewardRecordsBtn);
+    const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(leaderboardBtn, marketBtn);
+    const rows = [row1, row2];
     return { embed, rows };
 }
 
@@ -143,6 +145,63 @@ export function buildGrumbleAmountInput(selectedRune: string, userBalance: numbe
     });
     
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
+    return { embed, rows: [row] };
+}
+
+export interface MarketViewOptions {
+    packs: number;
+    dollars: number;
+    glyphBalance: number;
+    canBuy: boolean;
+    canClaim: boolean;
+    dollarCap: number;
+    minClaim: number;
+}
+
+export function buildMarketView(options: MarketViewOptions) {
+    const { packs, dollars, glyphBalance, canBuy, canClaim, dollarCap, minClaim } = options;
+    const embed = new EmbedBuilder()
+        .setColor(0x3AA76D)
+        .setTitle('Glyphs Market')
+        .setDescription(
+            [
+                'Purchase packs with GLYPHS and collect dollar rewards.',
+                `• Each pack costs **750 GLYPHS**.`,
+                `• Dollar balance caps at **${dollarCap}$**.`,
+                `• Claim becomes available between **${minClaim}$** and **${dollarCap}$**.`,
+            ].join('\n')
+        )
+        .addFields(
+            { name: 'Packs Owned', value: packs.toString(), inline: true },
+            { name: 'Dollar Balance', value: `${dollars}$`, inline: true },
+            { name: 'GLYPHS Balance', value: glyphBalance.toLocaleString(), inline: true },
+        );
+
+    if (!canBuy) {
+        embed.addFields({ name: 'Buy Status', value: 'Not enough GLYPHS to buy a pack.', inline: false });
+    }
+
+    if (!canClaim) {
+        if (dollars >= dollarCap) {
+            embed.addFields({ name: 'Claim Status', value: `Dollar balance is capped. Spend or claim once you meet the minimum.`, inline: false });
+        } else {
+            embed.addFields({ name: 'Claim Status', value: `Collect at least ${minClaim}$ to unlock the claim button.`, inline: false });
+        }
+    }
+
+    const buyBtn = new ButtonBuilder()
+        .setCustomId('market_buy')
+        .setLabel('Buy Pack (750 GLYPHS)')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!canBuy);
+
+    const claimBtn = new ButtonBuilder()
+        .setCustomId('market_claim')
+        .setLabel('Claim Dollars')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(!canClaim);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(buyBtn, claimBtn);
     return { embed, rows: [row] };
 }
 

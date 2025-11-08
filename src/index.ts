@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
-import { Client, GatewayIntentBits, Interaction, MessageComponentInteraction, StringSelectMenuInteraction, Events, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, MessageFlags, DiscordAPIError, GuildMember, PartialGuildMember } from 'discord.js';
-import { buildChoiceMenu, buildPanel, buildGrumbleRuneSelection, buildGrumbleAmountInput } from './ui';
-import { GameRuntime, initGame, recordChoice, SYMBOLS, SymbolRune, startTicker, getBalance, getLastBlockRewardInfo, getUserRewardRecords, getLeaderboard, pickRandomSymbol, symbolDistance, saveGrumbleState, getGrumbleState, clearGrumbleState, isGrumbleActive, shouldGrumbleEnd, setUserGlyphs, getUserBetInfo } from './game';
+import { Client, GatewayIntentBits, Interaction, MessageComponentInteraction, StringSelectMenuInteraction, Events, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, MessageFlags, DiscordAPIError, GuildMember, PartialGuildMember, EmbedBuilder } from 'discord.js';
+import { buildChoiceMenu, buildPanel, buildGrumbleRuneSelection, buildGrumbleAmountInput, buildMarketView } from './ui';
+import { GameRuntime, initGame, recordChoice, SYMBOLS, SymbolRune, startTicker, getBalance, getLastBlockRewardInfo, getUserRewardRecords, getLeaderboard, pickRandomSymbol, symbolDistance, saveGrumbleState, getGrumbleState, clearGrumbleState, isGrumbleActive, shouldGrumbleEnd, setUserGlyphs, getUserBetInfo, getUserPackCount, getUserDollarBalance, addPackToUser, PACK_COST, MARKET_MIN_CLAIM_DOLLARS, MARKET_MAX_DOLLAR_BALANCE, MARKET_PURCHASE_IMAGE_URL, openPackForUser, canClaimDollars, resetUserDollars } from './game';
 import { GrumbleState } from './storage';
 import { handleSlash } from './commands';
 import { buildGrumblePanel } from './ui';
@@ -17,6 +17,9 @@ let healthMemoryLogger: NodeJS.Timeout | undefined;
 let cooldownGcTimer: NodeJS.Timeout | undefined;
 let grumbleTimer: NodeJS.Timeout | undefined;
 let clientRef: Client | undefined;
+
+const MARKET_NOTIFICATION_CHANNEL_ID = '1207668053932769335';
+const MARKET_CLAIM_NOTIFY_USER_ID = '410662767981232128';
 
 // Basic overload protection: throttle panel refreshes
 let lastRefreshAt = 0;
@@ -382,6 +385,24 @@ function scheduleRefresh(client: Client) {
         lastRefreshAt = Date.now();
         void refreshPanel(client);
     }, delay);
+}
+
+function buildMarketPayload(runtime: GameRuntime, userId: string) {
+    const packs = getUserPackCount(runtime, userId);
+    const dollars = getUserDollarBalance(runtime, userId);
+    const glyphBalance = getBalance(runtime, userId);
+    const canBuy = glyphBalance >= PACK_COST;
+    const canClaim = canClaimDollars(dollars) && dollars <= MARKET_MAX_DOLLAR_BALANCE;
+    const { embed, rows } = buildMarketView({
+        packs,
+        dollars,
+        glyphBalance,
+        canBuy,
+        canClaim,
+        dollarCap: MARKET_MAX_DOLLAR_BALANCE,
+        minClaim: MARKET_MIN_CLAIM_DOLLARS,
+    });
+    return { embed, rows, packs, dollars, glyphBalance, canBuy, canClaim };
 }
 
 async function postPanel(channel: TextChannel) {
@@ -919,6 +940,78 @@ async function main() {
                 // Politely inform the user; ephemeral to avoid extra channel noise
                 if (!interaction.replied && !interaction.deferred) {
                     return safeReply('The bot is busy right now due to high activity. Please try again in a moment.', { flags: MessageFlags.Ephemeral });
+                }
+                return;
+            }
+            if (interaction.customId === 'market') {
+                const payload = buildMarketPayload(runtime, interaction.user.id);
+                return safeReply('🛒 Your market status:', { embeds: [payload.embed], components: payload.rows, flags: MessageFlags.Ephemeral });
+            }
+            if (interaction.customId === 'market_buy') {
+                const userId = interaction.user.id;
+                const glyphBalance = getBalance(runtime, userId);
+                if (glyphBalance < PACK_COST) {
+                    return interaction.reply({
+                        content: `You need ${PACK_COST.toLocaleString()} GLYPHS to buy a pack. Your balance is ${glyphBalance.toLocaleString()} GLYPHS.`,
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+                runtime.balances.data[userId] = glyphBalance - PACK_COST;
+                await runtime.balances.write();
+                await addPackToUser(runtime, userId, 1);
+                const payload = buildMarketPayload(runtime, userId);
+                await interaction.update({
+                    content: '🛒 Your market status:',
+                    embeds: [payload.embed],
+                    components: payload.rows,
+                });
+                const purchaseEmbed = new EmbedBuilder()
+                    .setColor(0x3AA76D)
+                    .setDescription([
+                        'You bought **1 market pack** for **750 GLYPHS**.',
+                        `Packs owned: **${payload.packs}**`,
+                        `Remaining balance: **${payload.glyphBalance.toLocaleString()} GLYPHS**`,
+                    ].join('\n'))
+                    .setImage(MARKET_PURCHASE_IMAGE_URL);
+                await interaction.followUp({
+                    embeds: [purchaseEmbed],
+                    flags: MessageFlags.Ephemeral,
+                });
+                return;
+            }
+            if (interaction.customId === 'market_claim') {
+                const userId = interaction.user.id;
+                const dollars = getUserDollarBalance(runtime, userId);
+                if (!canClaimDollars(dollars) || dollars > MARKET_MAX_DOLLAR_BALANCE) {
+                    return interaction.reply({
+                        content: `You can only claim when you have between ${MARKET_MIN_CLAIM_DOLLARS}$ and ${MARKET_MAX_DOLLAR_BALANCE}$. Current balance: ${dollars}$.`,
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+                const claimed = await resetUserDollars(runtime, userId);
+                 if (claimed <= 0) {
+                     return interaction.reply({
+                         content: 'You have nothing to claim right now.',
+                         flags: MessageFlags.Ephemeral,
+                     });
+                 }
+                const payload = buildMarketPayload(runtime, userId);
+                await interaction.update({
+                    content: '🛒 Your market status:',
+                    embeds: [payload.embed],
+                    components: payload.rows,
+                });
+                await interaction.followUp({
+                    content: `You claimed **${claimed}$**. Dollar balance reset to 0.`,
+                    flags: MessageFlags.Ephemeral,
+                });
+                try {
+                    const channel = await interaction.client.channels.fetch(MARKET_NOTIFICATION_CHANNEL_ID);
+                    if (channel && channel.isTextBased()) {
+                        await (channel as TextChannel).send(`<@${MARKET_CLAIM_NOTIFY_USER_ID}> <@${userId}> claimed **${claimed}$** from the market.`);
+                    }
+                } catch (error) {
+                    console.error('Failed to send market claim notification:', error);
                 }
                 return;
             }

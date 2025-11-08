@@ -1,5 +1,5 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes, PermissionFlagsBits, MessageFlags, DiscordAPIError } from 'discord.js';
-import { GameRuntime, setBlockDuration, setCurrentBlock, setTotalRewards, setBaseReward, getLeaderboard } from './game';
+import { SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes, PermissionFlagsBits, MessageFlags, DiscordAPIError, EmbedBuilder } from 'discord.js';
+import { GameRuntime, setBlockDuration, setCurrentBlock, setTotalRewards, setBaseReward, getLeaderboard, exportMiningData, getUserPackCount, openPackForUser, MARKET_MIN_CLAIM_DOLLARS, MARKET_MAX_DOLLAR_BALANCE } from './game';
 
 export const commands = [
     new SlashCommandBuilder().setName('start').setDescription('Re-enable the bot after a soft stop (admin only)'),
@@ -21,6 +21,7 @@ export const commands = [
         .addStringOption(o=>o.setName('channel').setDescription('Channel ID for notifications (optional)'),
     ),
     new SlashCommandBuilder().setName('finalleaderboard').setDescription('Show the final leaderboard (top 10 by exact matches)'),
+    new SlashCommandBuilder().setName('openpack').setDescription('Open one of your market packs'),
     new SlashCommandBuilder().setName('grumble').setDescription('Start a rumble gambling game (admin only)'),
     new SlashCommandBuilder().setName('grumble_restart').setDescription('Restart the current grumble game (admin only)'),
     new SlashCommandBuilder().setName('grumblepanel').setDescription('Repost the grumble panel in this channel (admin only)'),
@@ -28,6 +29,7 @@ export const commands = [
     new SlashCommandBuilder().setName('setglyphs').setDescription('Set a user\'s glyph balance (admin only)')
         .addUserOption(o=>o.setName('user').setDescription('User to set glyphs for').setRequired(true))
         .addIntegerOption(o=>o.setName('amount').setDescription('Amount of glyphs to set').setRequired(true)),
+    new SlashCommandBuilder().setName('exportdata').setDescription('Export mining data snapshot to JSON (admin only)'),
 ].map(c=>c.toJSON());
 
 export async function handleSlash(interaction: ChatInputCommandInteraction, runtime: GameRuntime) {
@@ -61,6 +63,81 @@ export async function handleSlash(interaction: ChatInputCommandInteraction, runt
     // Changed from 'ephemeral: true' to 'flags: MessageFlags.Ephemeral' due to Discord.js deprecation
     if (!runtime.isActive && interaction.commandName !== 'start' && interaction.commandName !== 'shutdown') {
         return safeReply('Bot is currently stopped. Use /start to enable it again.', { flags: MessageFlags.Ephemeral });
+    }
+    if (interaction.commandName === 'exportdata') {
+        if (!interaction.memberPermissions || !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+            return safeReply('You do not have permission to use this command.', { flags: MessageFlags.Ephemeral });
+        }
+        try {
+            await interaction.deferReply({ ephemeral: true });
+            const result = await exportMiningData(runtime);
+            const totalGlyphs = result.payload.summary.totalGlyphs.toLocaleString();
+            const totalAccounts = result.payload.summary.totalAccounts.toLocaleString();
+            await interaction.editReply(
+                `Export complete. Saved to ${result.relativePath}\nAccounts: ${totalAccounts} | Total Glyphs: ${totalGlyphs}`
+            );
+        } catch (error) {
+            console.error('Error exporting mining data:', error);
+            if (interaction.deferred) {
+                await interaction.editReply('Failed to export mining data. Check logs for details.');
+            } else {
+                await safeReply('Failed to export mining data. Check logs for details.', { flags: MessageFlags.Ephemeral });
+            }
+        }
+        return;
+    }
+    if (interaction.commandName === 'openpack') {
+        const packs = getUserPackCount(runtime, interaction.user.id);
+        if (packs <= 0) {
+            return safeReply('You have no packs to open. Buy one from the market first.', { flags: MessageFlags.Ephemeral });
+        }
+        await interaction.deferReply({ ephemeral: true });
+        try {
+            let roleIds: string[] = [];
+            if (interaction.guild) {
+                try {
+                    const member = await interaction.guild.members.fetch(interaction.user.id);
+                    roleIds = Array.from(member.roles.cache.keys());
+                } catch (error) {
+                    console.warn('Failed to fetch member roles for openpack:', error);
+                }
+            }
+            const result = await openPackForUser(runtime, interaction.user.id, roleIds);
+            const color = result.prize.type === 'glyphs' ? 0x6C63FF : 0xFFD166;
+            const embed = new EmbedBuilder()
+                .setColor(color)
+                .setTitle('Pack Opened!')
+                .setDescription(`You pulled **${result.prize.label}** from the market pack.`)
+                .addFields({ name: 'Packs Remaining', value: result.packsRemaining.toString(), inline: true })
+                .setImage(result.prize.imageUrl);
+
+            if (result.prize.type === 'glyphs') {
+                const earned = result.prize.amount.toLocaleString();
+                const newBalance = (result.glyphBalance ?? 0).toLocaleString();
+                embed.addFields(
+                    { name: 'Glyphs Earned', value: `${earned} GLYPHS`, inline: true },
+                    { name: 'New Balance', value: `${newBalance} GLYPHS`, inline: true },
+                );
+            } else {
+                const added = result.dollarsAdded ?? 0;
+                const addedDisplay = `${added}$${added < result.prize.amount ? ' (capped)' : ''}`;
+                const newBalance = result.dollarBalance ?? 0;
+                embed.addFields(
+                    { name: 'Dollars Added', value: addedDisplay, inline: true },
+                    { name: 'Current Dollar Balance', value: `${newBalance}$`, inline: true },
+                    { name: 'Claim Reminder', value: `Claim between ${MARKET_MIN_CLAIM_DOLLARS}$ and ${MARKET_MAX_DOLLAR_BALANCE}$.`, inline: false }
+                );
+                if (result.dollarsCapped) {
+                    embed.addFields({ name: 'Note', value: 'Dollar balance capped at 20$. Claim soon to keep earning!', inline: false });
+                }
+            }
+
+            await interaction.editReply({ embeds: [embed] });
+        } catch (error) {
+            console.error('Error opening pack:', error);
+            await interaction.editReply('Failed to open pack. Please try again shortly.');
+        }
+        return;
     }
     // Changed from 'ephemeral: true' to 'flags: MessageFlags.Ephemeral' due to Discord.js deprecation
     if (interaction.commandName === 'shutdown') {

@@ -1,6 +1,8 @@
 import dayjs from 'dayjs';
+import * as fs from 'fs';
+import * as path from 'path';
 import { openBalances, openState, BalanceMap, PersistedState, MemberResult, BlockHistory, GrumbleState } from './storage';
-import { User, Interaction, DiscordAPIError } from 'discord.js';
+import { Interaction, DiscordAPIError } from 'discord.js';
 
 // Ensure no duplicate runes - this will throw an error if duplicates are found
 const RAW_SYMBOLS = [
@@ -45,6 +47,8 @@ export async function initGame(): Promise<GameRuntime> {
         notifyRoleId: process.env.DISCORD_NOTIFY_ROLE_ID,
         notifyChannelId: process.env.DISCORD_NOTIFY_CHANNEL_ID,
     };
+    runtime.state.data.marketPacks ??= {};
+    runtime.state.data.marketDollars ??= {};
     return runtime;
 }
 
@@ -97,6 +101,167 @@ export function computeReward(baseReward: number, player: SymbolRune, bot: Symbo
 function randomInt(min: number, max: number): number {
     // Inclusive min and max
     return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+export const PACK_COST = 750;
+export const MARKET_MIN_CLAIM_DOLLARS = 10;
+export const MARKET_MAX_DOLLAR_BALANCE = 20;
+export const MARKET_PURCHASE_IMAGE_URL = 'https://i.imgur.com/avZ3tRj.jpeg';
+export const ROLE_MARKET_ALL_PRIZES = '1224077301092843620';
+export const ROLE_MARKET_LIMITED_DOLLARS = '1207680848862777417';
+
+export interface PackPrizeDefinition {
+    id: string;
+    label: string;
+    type: 'glyphs' | 'dollar';
+    amount: number;
+    weight: number;
+    imageUrl: string;
+}
+
+const PACK_PRIZE_DEFINITIONS: PackPrizeDefinition[] = [
+    { id: 'glyphs_250', label: '250 GLYPHS', type: 'glyphs', amount: 250, weight: 450, imageUrl: 'https://i.imgur.com/SwuzzoO.png' },
+    { id: 'glyphs_500', label: '500 GLYPHS', type: 'glyphs', amount: 500, weight: 300, imageUrl: 'https://i.imgur.com/WK6QAsK.png' },
+    { id: 'glyphs_750', label: '750 GLYPHS', type: 'glyphs', amount: 750, weight: 150, imageUrl: 'https://i.imgur.com/1oBOxsi.png' },
+    { id: 'dollar_1', label: '$1', type: 'dollar', amount: 1, weight: 50, imageUrl: 'https://i.imgur.com/oyPLjoG.png' },
+    { id: 'dollar_2', label: '$2', type: 'dollar', amount: 2, weight: 30, imageUrl: 'https://i.imgur.com/UHvsr15.png' },
+    { id: 'dollar_3', label: '$3', type: 'dollar', amount: 3, weight: 15, imageUrl: 'https://i.imgur.com/Tgrt4ow.png' },
+    { id: 'dollar_4', label: '$4', type: 'dollar', amount: 4, weight: 5, imageUrl: 'https://i.imgur.com/UOl6uz0.png' },
+];
+
+export function getUserPackCount(runtime: GameRuntime, userId: string): number {
+    runtime.state.data.marketPacks ??= {};
+    return runtime.state.data.marketPacks[userId] ?? 0;
+}
+
+export async function addPackToUser(runtime: GameRuntime, userId: string, count: number = 1): Promise<number> {
+    runtime.state.data.marketPacks ??= {};
+    const current = runtime.state.data.marketPacks[userId] ?? 0;
+    const updated = Math.max(0, current + count);
+    if (updated === 0) {
+        delete runtime.state.data.marketPacks[userId];
+    } else {
+        runtime.state.data.marketPacks[userId] = updated;
+    }
+    await runtime.state.write();
+    return runtime.state.data.marketPacks[userId] ?? 0;
+}
+
+export async function consumePackFromUser(runtime: GameRuntime, userId: string): Promise<number> {
+    const current = getUserPackCount(runtime, userId);
+    if (current <= 0) {
+        throw new Error('NO_PACKS_AVAILABLE');
+    }
+    return addPackToUser(runtime, userId, -1);
+}
+
+export function getUserDollarBalance(runtime: GameRuntime, userId: string): number {
+    runtime.state.data.marketDollars ??= {};
+    return runtime.state.data.marketDollars[userId] ?? 0;
+}
+
+export interface DollarBalanceUpdate {
+    added: number;
+    newBalance: number;
+    capped: boolean;
+}
+
+export async function addDollarsToUser(runtime: GameRuntime, userId: string, amount: number): Promise<DollarBalanceUpdate> {
+    runtime.state.data.marketDollars ??= {};
+    const current = runtime.state.data.marketDollars[userId] ?? 0;
+    const room = Math.max(0, MARKET_MAX_DOLLAR_BALANCE - current);
+    const added = Math.max(0, Math.min(room, amount));
+    const newBalance = current + added;
+    if (newBalance <= 0) {
+        delete runtime.state.data.marketDollars[userId];
+    } else {
+        runtime.state.data.marketDollars[userId] = newBalance;
+    }
+    await runtime.state.write();
+    return {
+        added,
+        newBalance,
+        capped: added < amount || newBalance >= MARKET_MAX_DOLLAR_BALANCE,
+    };
+}
+
+export async function resetUserDollars(runtime: GameRuntime, userId: string): Promise<number> {
+    runtime.state.data.marketDollars ??= {};
+    const current = runtime.state.data.marketDollars[userId] ?? 0;
+    if (current > 0) {
+        delete runtime.state.data.marketDollars[userId];
+        await runtime.state.write();
+    }
+    return current;
+}
+
+export function canClaimDollars(balance: number): boolean {
+    return balance >= MARKET_MIN_CLAIM_DOLLARS;
+}
+
+export function getEligiblePackPrizes(roleIds: Iterable<string>): PackPrizeDefinition[] {
+    const roleSet = new Set(roleIds);
+    const allowAllDollars = roleSet.has(ROLE_MARKET_ALL_PRIZES) || !roleSet.has(ROLE_MARKET_LIMITED_DOLLARS);
+    return PACK_PRIZE_DEFINITIONS.filter((prize) => {
+        if (prize.type === 'dollar' && !allowAllDollars && prize.amount > 1) {
+            return false;
+        }
+        return true;
+    });
+}
+
+export function drawPackPrize(roleIds: Iterable<string>): PackPrizeDefinition {
+    const eligible = getEligiblePackPrizes(roleIds);
+    if (eligible.length === 0) {
+        throw new Error('NO_ELIGIBLE_PRIZES');
+    }
+    const totalWeight = eligible.reduce((sum, prize) => sum + prize.weight, 0);
+    const roll = randomInt(1, totalWeight);
+    let cumulative = 0;
+    for (const prize of eligible) {
+        cumulative += prize.weight;
+        if (roll <= cumulative) {
+            return prize;
+        }
+    }
+    const fallback = eligible[eligible.length - 1];
+    if (!fallback) {
+        throw new Error('NO_ELIGIBLE_PRIZES');
+    }
+    return fallback;
+}
+
+export interface PackOpenResult {
+    prize: PackPrizeDefinition;
+    packsRemaining: number;
+    glyphBalance?: number;
+    dollarBalance?: number;
+    dollarsAdded?: number;
+    dollarsCapped?: boolean;
+}
+
+export async function openPackForUser(runtime: GameRuntime, userId: string, roleIds: Iterable<string>): Promise<PackOpenResult> {
+    const packsRemaining = await consumePackFromUser(runtime, userId);
+    const prize = drawPackPrize(roleIds);
+    if (prize.type === 'glyphs') {
+        const prev = runtime.balances.data[userId] ?? 0;
+        const updated = prev + prize.amount;
+        runtime.balances.data[userId] = updated;
+        await runtime.balances.write();
+        return {
+            prize,
+            packsRemaining,
+            glyphBalance: updated,
+        };
+    }
+    const update = await addDollarsToUser(runtime, userId, prize.amount);
+    return {
+        prize,
+        packsRemaining,
+        dollarBalance: update.newBalance,
+        dollarsAdded: update.added,
+        dollarsCapped: update.capped,
+    };
 }
 
 export async function setTotalRewards(runtime: GameRuntime, amount: number) {
@@ -282,6 +447,88 @@ export function getUserRewardRecords(runtime: GameRuntime, userId: string): stri
     return info;
 }
 
+export interface LeaderboardUserStats {
+    userId: string;
+    balance: number;
+    picks: Partial<Record<SymbolRune, number>>;
+    exactMatches: number;
+    totalParticipations: number;
+    lastParticipationAt: number | null;
+    mostPicked: SymbolRune | null;
+}
+
+export function computeLeaderboardStats(runtime: GameRuntime): LeaderboardUserStats[] {
+    const statsMap = new Map<string, LeaderboardUserStats>();
+
+    const ensureStats = (userId: string): LeaderboardUserStats => {
+        let stats = statsMap.get(userId);
+        if (!stats) {
+            stats = {
+                userId,
+                balance: runtime.balances.data[userId] ?? 0,
+                picks: {},
+                exactMatches: 0,
+                totalParticipations: 0,
+                lastParticipationAt: null,
+                mostPicked: null,
+            };
+            statsMap.set(userId, stats);
+        }
+        return stats;
+    };
+
+    for (const block of runtime.state.data.blockHistory) {
+        for (const result of block.memberResults) {
+            const stats = ensureStats(result.userId);
+            stats.balance = runtime.balances.data[result.userId] ?? 0;
+            const existingPick = stats.picks[result.choice as SymbolRune] ?? 0;
+            stats.picks[result.choice as SymbolRune] = existingPick + 1;
+            if (result.distance === 0) {
+                stats.exactMatches += 1;
+            }
+            stats.totalParticipations += 1;
+            if (stats.lastParticipationAt === null || block.timestamp > stats.lastParticipationAt) {
+                stats.lastParticipationAt = block.timestamp;
+            }
+        }
+    }
+
+    for (const [userId, balance] of Object.entries(runtime.balances.data)) {
+        const stats = ensureStats(userId);
+        stats.balance = balance;
+    }
+
+    for (const userId of Object.keys(runtime.currentChoices)) {
+        ensureStats(userId);
+    }
+
+    const result = Array.from(statsMap.values()).map((stats) => {
+        const pickEntries = Object.entries(stats.picks);
+        let topRune: string | null = null;
+        let topCount = -1;
+        for (const [rune, count] of pickEntries) {
+            const safeCount = typeof count === 'number' ? count : 0;
+            if (safeCount > topCount) {
+                topCount = safeCount;
+                topRune = rune;
+            }
+        }
+        const mostPicked = topRune ? (topRune as SymbolRune) : null;
+        return {
+            ...stats,
+            picks: { ...stats.picks },
+            mostPicked,
+        };
+    });
+
+    result.sort((a, b) => {
+        if (b.exactMatches !== a.exactMatches) return b.exactMatches - a.exactMatches;
+        return b.balance - a.balance;
+    });
+
+    return result;
+}
+
 // Cache for leaderboard data to reduce computation
 let leaderboardCache: { 
     data: string; 
@@ -292,66 +539,41 @@ let leaderboardCache: {
 
 export async function getLeaderboard(runtime: GameRuntime, interaction: Interaction): Promise<string> {
     try {
-        // Check if we can use cached data
         const currentBlockNumber = runtime.state.data.currentBlock;
         const balanceHash = JSON.stringify(runtime.balances.data);
         const now = Date.now();
-        
-        if (leaderboardCache && 
-            leaderboardCache.expiresAt > now && 
+
+        if (
+            leaderboardCache &&
+            leaderboardCache.expiresAt > now &&
             leaderboardCache.lastBlockNumber === currentBlockNumber &&
-            leaderboardCache.lastBalanceHash === balanceHash) {
+            leaderboardCache.lastBalanceHash === balanceHash
+        ) {
             return leaderboardCache.data;
         }
-        
-        // Gather stats for all users who have ever participated
-        const userStats: Record<string, {
-            balance: number,
-            picks: Record<string, number>,
-            exactMatches: number
-        }> = {};
-        // Go through all block history
-        for (const block of runtime.state.data.blockHistory) {
-            for (const result of block.memberResults) {
-                if (!userStats[result.userId]) {
-                    userStats[result.userId] = { balance: 0, picks: {}, exactMatches: 0 };
-                }
-                const stats = userStats[result.userId];
-                if (stats) {
-                    stats.balance = runtime.balances.data[result.userId] ?? 0;
-                    stats.picks[result.choice] = (stats.picks[result.choice] || 0) + 1;
-                    if (result.distance === 0) stats.exactMatches++;
-                }
-            }
+
+        const statsList = computeLeaderboardStats(runtime);
+        if (statsList.length === 0) {
+            return 'No leaderboard data yet.';
         }
-        // If no data
-        if (Object.keys(userStats).length === 0) return 'No leaderboard data yet.';
-        // Sort by exact matches, then balance
-        const sorted = Object.entries(userStats).sort((a, b) => {
-            if (b[1].exactMatches !== a[1].exactMatches) return b[1].exactMatches - a[1].exactMatches;
-            return b[1].balance - a[1].balance;
-        });
-        // Prepare leaderboard lines
-        let lines = '**Leaderboard (Top 10 by Exact Matches):**\n\n';
-        let rank = 1;
-        let userIdToUsername: Record<string, string> = {};
-        // Fetch usernames for top 10 and the requesting user
-        const topUserIds = sorted.slice(0, 10).map(([uid]) => uid);
-        if (!topUserIds.includes(interaction.user.id)) topUserIds.push(interaction.user.id);
-        
-        // Only try to fetch real Discord user IDs (those that look like Discord snowflakes)
-        const discordUserIds = topUserIds.filter(uid => /^\d{17,19}$/.test(uid));
-        
-        // Batch fetch users to reduce API calls and improve performance
+
+        const topEntries = statsList.slice(0, 10);
+        const requestingUserStats = statsList.find((entry) => entry.userId === interaction.user.id);
+        const topUserIds = new Set<string>(topEntries.map((entry) => entry.userId));
+        topUserIds.add(interaction.user.id);
+
+        const userIdToUsername: Record<string, string> = {};
+        const discordUserIds = Array.from(topUserIds).filter((uid) => /^\d{17,19}$/.test(uid));
+
         const fetchPromises = discordUserIds.map(async (uid) => {
             try {
                 const user = await interaction.client.users.fetch(uid);
                 return { uid, username: user.username };
             } catch (error) {
                 if (error instanceof DiscordAPIError) {
-                    if (error.code === 10013) { // Unknown User
+                    if (error.code === 10013) {
                         console.warn(`User ${uid} no longer exists (deleted account)`);
-                    } else if (error.code === 50013) { // Missing Permissions
+                    } else if (error.code === 50013) {
                         console.warn(`Bot missing permissions to fetch user ${uid}:`, error.message);
                     } else {
                         console.warn(`Discord API error fetching user ${uid}:`, error.code, error.message);
@@ -362,56 +584,40 @@ export async function getLeaderboard(runtime: GameRuntime, interaction: Interact
                 return { uid, username: uid };
             }
         });
-        
-        // Wait for all user fetches to complete in parallel
+
         const userResults = await Promise.all(fetchPromises);
         for (const result of userResults) {
             userIdToUsername[result.uid] = result.username;
         }
-        
-        // For non-Discord user IDs (like simulation users), just use the ID as display name
         for (const uid of topUserIds) {
             if (!userIdToUsername[uid]) {
                 userIdToUsername[uid] = uid;
             }
         }
-    for (let i = 0; i < Math.min(10, sorted.length); i++) {
-        const entry = sorted[i];
-        if (!entry) continue;
-        const [uid, stats] = entry;
-        if (!stats) continue;
-        const picksEntries = Object.entries(stats.picks);
-        let mostPicked = '-';
-        if (picksEntries.length > 0) {
-            const sortedPick = picksEntries.sort((a, b) => b[1] - a[1])[0];
-            if (sortedPick && sortedPick[0]) mostPicked = sortedPick[0];
+
+        let output = '**Leaderboard (Top 10 by Exact Matches):**\n\n';
+        let rank = 1;
+        for (const entry of topEntries) {
+            const mostPicked = entry.mostPicked ?? '-';
+            output += `${rank}. **${userIdToUsername[entry.userId]}** | Balance: ${entry.balance.toLocaleString()} | Most Picked: ${mostPicked} | Exact Matches: ${entry.exactMatches}\n`;
+            rank += 1;
         }
-        lines += `${rank}. **${userIdToUsername[uid]}** | Balance: ${stats.balance.toLocaleString()} | Most Picked: ${mostPicked} | Exact Matches: ${stats.exactMatches}\n`;
-        rank++;
-    }
-    // If requesting user not in top 10, show their stats
-    if (!topUserIds.slice(0, 10).includes(interaction.user.id) && userStats[interaction.user.id]) {
-        const stats = userStats[interaction.user.id];
-        if (stats) {
-            const picksEntries = Object.entries(stats.picks);
-            let mostPicked = '-';
-            if (picksEntries.length > 0) {
-                const sortedPick = picksEntries.sort((a, b) => b[1] - a[1])[0];
-                if (sortedPick && sortedPick[0]) mostPicked = sortedPick[0];
-            }
-            lines += `\nYour Rank: ${sorted.findIndex(([uid]) => uid === interaction.user.id) + 1}. **${userIdToUsername[interaction.user.id]}** | Balance: ${stats.balance.toLocaleString()} | Most Picked: ${mostPicked} | Exact Matches: ${stats.exactMatches}\n`;
+
+        if (requestingUserStats && !topEntries.some((entry) => entry.userId === interaction.user.id)) {
+            const mostPicked = requestingUserStats.mostPicked ?? '-';
+            const rankIndex = statsList.findIndex((entry) => entry.userId === interaction.user.id);
+            const userRank = rankIndex >= 0 ? rankIndex + 1 : statsList.length + 1;
+            output += `\nYour Rank: ${userRank}. **${userIdToUsername[interaction.user.id]}** | Balance: ${requestingUserStats.balance.toLocaleString()} | Most Picked: ${mostPicked} | Exact Matches: ${requestingUserStats.exactMatches}\n`;
         }
-    }
-    
-    // Cache the result for 30 seconds
-    leaderboardCache = {
-        data: lines,
-        expiresAt: now + 30000, // 30 seconds
-        lastBlockNumber: currentBlockNumber,
-        lastBalanceHash: balanceHash
-    };
-    
-    return lines;
+
+        leaderboardCache = {
+            data: output,
+            expiresAt: now + 30000,
+            lastBlockNumber: currentBlockNumber,
+            lastBalanceHash: balanceHash,
+        };
+
+        return output;
     } catch (error) {
         if (error instanceof DiscordAPIError) {
             console.error('Discord API error generating leaderboard:', error.code, error.message);
@@ -420,6 +626,103 @@ export async function getLeaderboard(runtime: GameRuntime, interaction: Interact
         }
         return 'Error generating leaderboard. Please try again.';
     }
+}
+
+const exportDir = path.join(process.cwd(), 'data', 'exports');
+
+export interface MiningExportPayload {
+    generatedAt: string;
+    metadata: {
+        currentBlock: number;
+        totalRewardsPerBlock: number;
+        baseReward: number;
+        blockDurationSec: number;
+        nextBlockAt: number;
+        lastBotChoice: string | null;
+        autorunRemainingBlocks: number | null;
+        notifyRoleId: string | null;
+        notifyChannelId: string | null;
+    };
+    summary: {
+        totalAccounts: number;
+        totalGlyphs: number;
+        totalBlockHistoryEntries: number;
+        totalLeaderboardEntries: number;
+        totalPacks: number;
+        totalDollarBalance: number;
+    };
+    balances: BalanceMap;
+    currentChoices: PlayerChoiceMap;
+    state: PersistedState;
+    leaderboard: LeaderboardUserStats[];
+    market: {
+        packs: Record<string, number>;
+        dollars: Record<string, number>;
+    };
+}
+
+export interface MiningExportResult {
+    filePath: string;
+    relativePath: string;
+    payload: MiningExportPayload;
+}
+
+export async function exportMiningData(runtime: GameRuntime): Promise<MiningExportResult> {
+    const statsList = computeLeaderboardStats(runtime);
+    const balancesCopy: BalanceMap = Object.fromEntries(Object.entries(runtime.balances.data));
+    const choicesCopy: PlayerChoiceMap = Object.fromEntries(Object.entries(runtime.currentChoices));
+    const stateCopy = JSON.parse(JSON.stringify(runtime.state.data)) as PersistedState;
+    const totalGlyphs = Object.values(balancesCopy).reduce<number>((sum, value) => sum + value, 0);
+    const totalPacks = Object.values(stateCopy.marketPacks ?? {}).reduce<number>((sum, value) => sum + value, 0);
+    const totalDollarBalance = Object.values(stateCopy.marketDollars ?? {}).reduce<number>((sum, value) => sum + value, 0);
+
+    const payload: MiningExportPayload = {
+        generatedAt: new Date().toISOString(),
+        metadata: {
+            currentBlock: stateCopy.currentBlock,
+            totalRewardsPerBlock: stateCopy.totalRewardsPerBlock,
+            baseReward: stateCopy.baseReward,
+            blockDurationSec: stateCopy.blockDurationSec,
+            nextBlockAt: stateCopy.nextBlockAt,
+            lastBotChoice: stateCopy.lastBotChoice ?? null,
+            autorunRemainingBlocks: typeof runtime.autorunRemainingBlocks === 'number' ? runtime.autorunRemainingBlocks : null,
+            notifyRoleId: runtime.notifyRoleId ?? null,
+            notifyChannelId: runtime.notifyChannelId ?? null,
+        },
+        summary: {
+            totalAccounts: Object.keys(balancesCopy).length,
+            totalGlyphs,
+            totalBlockHistoryEntries: stateCopy.blockHistory.length,
+            totalLeaderboardEntries: statsList.length,
+            totalPacks,
+            totalDollarBalance,
+        },
+        balances: balancesCopy,
+        currentChoices: choicesCopy,
+        state: stateCopy,
+        leaderboard: statsList.map((entry) => ({
+            ...entry,
+            picks: { ...entry.picks },
+        })),
+        market: {
+            packs: { ...stateCopy.marketPacks },
+            dollars: { ...stateCopy.marketDollars },
+        },
+    };
+
+    if (!fs.existsSync(exportDir)) {
+        fs.mkdirSync(exportDir, { recursive: true });
+    }
+
+    const fileName = `glyphs-export-${dayjs().format('YYYY-MM-DDTHH-mm-ss')}.json`;
+    const filePath = path.join(exportDir, fileName);
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+
+    return {
+        filePath,
+        relativePath: path.relative(process.cwd(), filePath),
+        payload,
+    };
 }
 
 // Grumble state persistence functions

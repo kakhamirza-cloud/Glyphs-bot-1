@@ -1,8 +1,8 @@
 {
-  "currentBlock": 40,
+  "currentBlock": 44,
   "totalRewardsPerBlock": 700000,
   "blockDurationSec": 86400,
-  "nextBlockAt": 1760637330391,
+  "nextBlockAt": 1762698700559,
   "blockHistory": [
     {
       "blockNumber": 29,
@@ -1952,32 +1952,432 @@
         }
       ],
       "timestamp": 1760550930391
+    },
+    {
+      "blockNumber": 40,
+      "botChoice": "ᚺ",
+      "memberResults": [
+        {
+          "userId": "512328241055399947",
+          "choice": "ᚺ",
+          "reward": 97,
+          "distance": 0
+        },
+        {
+          "userId": "720405725222010964",
+          "choice": "ᚺ",
+          "reward": 95,
+          "distance": 0
+        },
+        {
+          "userId": "519164794931249153",
+          "choice": "ᚺ",
+          "reward": 95,
+          "distance": 0
+        },
+        {
+          "userId": "338768160167690242",
+          "choice": "ᛋ",
+          "reward": 81,
+          "distance": 3
+        },
+        {
+          "userId": "788440348468707359",
+          "choice": "ᛁ",
+          "reward": 80,
+          "distance": 2
+        },
+        {
+          "userId": "394186899276693506",
+          "choice": "ᛏ",
+          "reward": 72,
+          "distance": 1
+        },
+        {
+          "userId": "957158824941346826",
+          "choice": "ᛋ",
+          "reward": 70,
+          "distance": 3
+        },
+        {
+          "userId": "418637037009371139",
+          "choice": "ᛇ",
+          "reward": 58,
+          "distance": 4
+        },
+        {
+          "userId": "1005107719646220359",
+          "choice": "ᛇ",
+          "reward": 52,
+          "distance": 4
+        },
+        {
+          "userId": "847937384800583710",
+          "choice": "ᛃ",
+          "reward": 51,
+          "distance": 6
+        },
+        {
+          "userId": "594186420906623003",
+          "choice": "ᛟ",
+          "reward": 50,
+          "distance": 7
+        },
+        {
+          "userId": "1066644270905298994",
+          "choice": "ᚠ",
+          "reward": 47,
+          "distance": 5
+        },
+        {
+          "userId": "1010182386551623830",
+          "choice": "ᛇ",
+          "reward": 46,
+          "distance": 4
+        },
+        {
+          "userId": "854755591896170496",
+          "choice": "ᛇ",
+          "reward": 42,
+          "distance": 4
+        },
+        {
+          "userId": "410662767981232128",
+          "choice": "ᛝ",
+          "reward": 28,
+          "distance": 9
+        },
+        {
+          "userId": "820206837068595200",
+          "choice": "ᛒ",
+          "reward": 27,
+          "distance": 9
+        },
+        {
+          "userId": "410210301510811658",
+          "choice": "ᛒ",
+          "reward": 24,
+          "distance": 9
+        },
+        {
+          "userId": "267679496415477760",
+          "choice": "ᚹ",
+          "reward": 20,
+          "distance": 8
+        },
+        {
+          "userId": "934718773158641724",
+          "choice": "ᛞ",
+          "reward": 19,
+          "distance": 8
+        },
+        {
+          "userId": "464797945573933066",
+          "choice": "ᛝ",
+          "reward": 18,
+          "distance": 9
+        },
+        {
+          "userId": "806685777958010880",
+          "choice": "ᛗ",
+          "reward": 16,
+          "distance": 10
+        }
+      ],
+      "timestamp": 1760637331000
+    },
+    {
+      "blockNumber": 41,
+      "botChoice": "ᛏ",
+      "memberResults": [
+        {
+          "userId": "720405725222010964",
+          "choice": "ᛏ",
+          "reward": 95,
+          "distance": 0
+        },
+        {
+          "userId": "934718773158641724",
+          "choice": "ᛏ",
+          "reward": 95,
+          "distance": 0
+        },
+        {
+          "userId": "868017742043840572",
+          "choice": "ᛁ",
+          "reward": 87,
+          "distance": 1
+        },
+        {
+          "userId": "788440348468707359",
+          "choice": "ᛁ",
+          "reward": 80,
+          "distance": 1
+        },
+        {
+          "userId": "512328241055399947",
+          "choice": "ᛋ",
+          "reward": 76,
+          "distance": 2
+        },
+        {
+          "userId": "940609428909092866",
+          "choice": "ᛈ",
+          "reward": 76,
+          "distance": 2
+        },
+        {
+          "userId": "1021715898022764545",
+          "choice": "ᛋ",
+          "reward": 75,
+          "distance": 2
+        },
+        {
+          "userId": "957158824941346826",
+          "choice": "ᛇ",
+          "reward": 74,
+          "distance": 3
+        },
+        {
+          "userId": "646452560202432575",
+          "choice": "ᚱ",
+          "reward": 55,
+          "distance": 5
+        },
+        {
+          "userId": "594186420906623003",
+          "choice": "ᚱ",
+          "reward": 52,
+          "distance": 5
+        },
+        {
+          "userId": "267679496415477760",
+          "choice": "ᚲ",
+          "reward": 50,
+          "distance": 4
+        },
+        {
+          "userId": "1066644270905298994",
+          "choice": "ᛟ",
+          "reward": 49,
+          "distance": 6
+        },
+        {
+          "userId": "796588526594031676",
+          "choice": "ᚹ",
+          "reward": 22,
+          "distance": 9
+        },
+        {
+          "userId": "1012210341171695667",
+          "choice": "ᛒ",
+          "reward": 20,
+          "distance": 8
+        },
+        {
+          "userId": "338768160167690242",
+          "choice": "ᛚ",
+          "reward": 19,
+          "distance": 10
+        },
+        {
+          "userId": "410210301510811658",
+          "choice": "ᛒ",
+          "reward": 18,
+          "distance": 8
+        },
+        {
+          "userId": "820206837068595200",
+          "choice": "ᛒ",
+          "reward": 18,
+          "distance": 8
+        }
+      ],
+      "timestamp": 1760723731132
+    },
+    {
+      "blockNumber": 42,
+      "botChoice": "ᛈ",
+      "memberResults": [
+        {
+          "userId": "1010182386551623830",
+          "choice": "ᚲ",
+          "reward": 88,
+          "distance": 2
+        },
+        {
+          "userId": "852074660828938260",
+          "choice": "ᚺ",
+          "reward": 86,
+          "distance": 1
+        },
+        {
+          "userId": "709910246897877083",
+          "choice": "ᛏ",
+          "reward": 84,
+          "distance": 2
+        },
+        {
+          "userId": "806685777958010880",
+          "choice": "ᚱ",
+          "reward": 83,
+          "distance": 3
+        },
+        {
+          "userId": "788440348468707359",
+          "choice": "ᛁ",
+          "reward": 80,
+          "distance": 3
+        },
+        {
+          "userId": "1210184868831436800",
+          "choice": "ᚺ",
+          "reward": 78,
+          "distance": 1
+        },
+        {
+          "userId": "1012210341171695667",
+          "choice": "ᛉ",
+          "reward": 70,
+          "distance": 1
+        },
+        {
+          "userId": "639976592826826752",
+          "choice": "ᚹ",
+          "reward": 56,
+          "distance": 7
+        },
+        {
+          "userId": "1021715898022764545",
+          "choice": "ᛋ",
+          "reward": 55,
+          "distance": 4
+        },
+        {
+          "userId": "868017742043840572",
+          "choice": "ᚹ",
+          "reward": 53,
+          "distance": 7
+        },
+        {
+          "userId": "720405725222010964",
+          "choice": "ᛇ",
+          "reward": 52,
+          "distance": 5
+        },
+        {
+          "userId": "940609428909092866",
+          "choice": "ᚾ",
+          "reward": 50,
+          "distance": 6
+        },
+        {
+          "userId": "457978369641021441",
+          "choice": "ᚨ",
+          "reward": 49,
+          "distance": 6
+        },
+        {
+          "userId": "394186899276693506",
+          "choice": "ᛋ",
+          "reward": 45,
+          "distance": 4
+        },
+        {
+          "userId": "854755591896170496",
+          "choice": "ᛇ",
+          "reward": 45,
+          "distance": 5
+        },
+        {
+          "userId": "832308095828099093",
+          "choice": "ᛋ",
+          "reward": 43,
+          "distance": 4
+        },
+        {
+          "userId": "338768160167690242",
+          "choice": "ᛗ",
+          "reward": 27,
+          "distance": 11
+        },
+        {
+          "userId": "937818713850277989",
+          "choice": "ᛗ",
+          "reward": 27,
+          "distance": 11
+        },
+        {
+          "userId": "512328241055399947",
+          "choice": "ᛗ",
+          "reward": 27,
+          "distance": 11
+        },
+        {
+          "userId": "410210301510811658",
+          "choice": "ᛒ",
+          "reward": 24,
+          "distance": 10
+        },
+        {
+          "userId": "594186420906623003",
+          "choice": "ᛟ",
+          "reward": 23,
+          "distance": 8
+        },
+        {
+          "userId": "418637037009371139",
+          "choice": "ᛞ",
+          "reward": 22,
+          "distance": 9
+        },
+        {
+          "userId": "1177230005714047038",
+          "choice": "ᛟ",
+          "reward": 17,
+          "distance": 8
+        }
+      ],
+      "timestamp": 1760981407890
+    },
+    {
+      "blockNumber": 43,
+      "botChoice": "ᛈ",
+      "memberResults": [
+        {
+          "userId": "489581860674863104",
+          "choice": "ᚱ",
+          "reward": 77,
+          "distance": 3
+        },
+        {
+          "userId": "394186899276693506",
+          "choice": "ᛁ",
+          "reward": 85,
+          "distance": 3
+        },
+        {
+          "userId": "464797945573933066",
+          "choice": "ᛇ",
+          "reward": 41,
+          "distance": 5
+        },
+        {
+          "userId": "639976592826826752",
+          "choice": "ᛉ",
+          "reward": 80,
+          "distance": 1
+        }
+      ],
+      "timestamp": 1762612300559
     }
   ],
-  "currentChoices": {
-    "594186420906623003": "ᛟ",
-    "847937384800583710": "ᛃ",
-    "464797945573933066": "ᛝ",
-    "1066644270905298994": "ᚠ",
-    "854755591896170496": "ᛇ",
-    "512328241055399947": "ᚺ",
-    "720405725222010964": "ᚺ",
-    "394186899276693506": "ᛏ",
-    "806685777958010880": "ᛗ",
-    "418637037009371139": "ᛇ",
-    "957158824941346826": "ᛋ",
-    "1010182386551623830": "ᛇ",
-    "788440348468707359": "ᛁ",
-    "410210301510811658": "ᛒ",
-    "820206837068595200": "ᛒ",
-    "1005107719646220359": "ᛇ",
-    "338768160167690242": "ᛋ",
-    "519164794931249153": "ᚺ",
-    "267679496415477760": "ᚹ",
-    "410662767981232128": "ᛝ",
-    "934718773158641724": "ᛞ"
-  },
+  "currentChoices": {},
   "baseReward": 100,
-  "lastBotChoice": "ᚲ",
-  "grumbleState": null
+  "lastBotChoice": "ᛈ",
+  "grumbleState": null,
+  "marketPacks": {
+    "410662767981232128": 1
+  },
+  "marketDollars": {}
 }

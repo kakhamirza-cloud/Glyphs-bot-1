@@ -48,6 +48,8 @@ export interface PersistedState {
     blockHistory: BlockHistory[];
     currentChoices: Record<string, string>; // Persist miners' choices
     grumbleState: GrumbleState | null; // Persist grumble game state
+    marketPacks: Record<string, number>;
+    marketDollars: Record<string, number>;
 }
 
 export interface DBSchema {
@@ -84,6 +86,8 @@ export class StorageManager {
                 if (typeof data.baseReward !== 'number') data.baseReward = 1_000_000;
                 // Ensure grumbleState exists if loading from old state
                 if (!data.grumbleState) data.grumbleState = null;
+                if (!data.marketPacks) data.marketPacks = {};
+                if (!data.marketDollars) data.marketDollars = {};
                 return data;
             }
         } catch (error) {
@@ -100,6 +104,8 @@ export class StorageManager {
             blockHistory: [],
             currentChoices: {},
             grumbleState: null,
+            marketPacks: {},
+            marketDollars: {},
         };
     }
 
