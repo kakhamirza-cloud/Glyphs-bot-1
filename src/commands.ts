@@ -1,4 +1,6 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes, PermissionFlagsBits, MessageFlags, DiscordAPIError, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes, PermissionFlagsBits, MessageFlags, DiscordAPIError, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import * as fs from 'fs';
+import * as path from 'path';
 import { GameRuntime, setBlockDuration, setCurrentBlock, setTotalRewards, setBaseReward, getLeaderboard, exportMiningData, getUserPackCount, openPackForUser, MARKET_MIN_CLAIM_DOLLARS, MARKET_MAX_DOLLAR_BALANCE } from './game';
 
 export const commands = [
@@ -73,9 +75,12 @@ export async function handleSlash(interaction: ChatInputCommandInteraction, runt
             const result = await exportMiningData(runtime);
             const totalGlyphs = result.payload.summary.totalGlyphs.toLocaleString();
             const totalAccounts = result.payload.summary.totalAccounts.toLocaleString();
-            await interaction.editReply(
-                `Export complete. Saved to ${result.relativePath}\nAccounts: ${totalAccounts} | Total Glyphs: ${totalGlyphs}`
-            );
+            const fileBuffer = fs.readFileSync(result.filePath);
+            const attachment = new AttachmentBuilder(fileBuffer, { name: path.basename(result.filePath) });
+            await interaction.editReply({
+                content: `Export complete. Saved to ${result.relativePath}\nAccounts: ${totalAccounts} | Total Glyphs: ${totalGlyphs}`,
+                files: [attachment],
+            });
         } catch (error) {
             console.error('Error exporting mining data:', error);
             if (interaction.deferred) {
