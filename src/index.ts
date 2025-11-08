@@ -968,7 +968,7 @@ async function main() {
                 const purchaseEmbed = new EmbedBuilder()
                     .setColor(0x3AA76D)
                     .setDescription([
-                        'You bought **1 market pack** for **750 GLYPHS**.',
+                        `You bought **1 market pack** for **${PACK_COST.toLocaleString()} GLYPHS**.`,
                         `Packs owned: **${payload.packs}**`,
                         `Remaining balance: **${payload.glyphBalance.toLocaleString()} GLYPHS**`,
                     ].join('\n'))

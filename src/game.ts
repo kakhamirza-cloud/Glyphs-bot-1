@@ -103,7 +103,7 @@ function randomInt(min: number, max: number): number {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-export const PACK_COST = 750;
+export const PACK_COST = 500;
 export const MARKET_MIN_CLAIM_DOLLARS = 10;
 export const MARKET_MAX_DOLLAR_BALANCE = 20;
 export const MARKET_PURCHASE_IMAGE_URL = 'https://i.imgur.com/avZ3tRj.jpeg';

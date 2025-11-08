@@ -1,8 +1,8 @@
 {
-  "currentBlock": 44,
-  "totalRewardsPerBlock": 700000,
+  "currentBlock": 45,
+  "totalRewardsPerBlock": 1500000,
   "blockDurationSec": 86400,
-  "nextBlockAt": 1762698700559,
+  "nextBlockAt": 1762711318160,
   "blockHistory": [
     {
       "blockNumber": 29,
@@ -2345,15 +2345,21 @@
       "botChoice": "ᛈ",
       "memberResults": [
         {
-          "userId": "489581860674863104",
-          "choice": "ᚱ",
-          "reward": 77,
-          "distance": 3
-        },
-        {
           "userId": "394186899276693506",
           "choice": "ᛁ",
           "reward": 85,
+          "distance": 3
+        },
+        {
+          "userId": "639976592826826752",
+          "choice": "ᛉ",
+          "reward": 80,
+          "distance": 1
+        },
+        {
+          "userId": "489581860674863104",
+          "choice": "ᚱ",
+          "reward": 77,
           "distance": 3
         },
         {
@@ -2361,23 +2367,136 @@
           "choice": "ᛇ",
           "reward": 41,
           "distance": 5
-        },
-        {
-          "userId": "639976592826826752",
-          "choice": "ᛉ",
-          "reward": 80,
-          "distance": 1
         }
       ],
       "timestamp": 1762612300559
+    },
+    {
+      "blockNumber": 44,
+      "botChoice": "ᚹ",
+      "memberResults": [
+        {
+          "userId": "820206837068595200",
+          "choice": "ᛒ",
+          "reward": 527,
+          "distance": 5
+        },
+        {
+          "userId": "450062955396988928",
+          "choice": "ᛉ",
+          "reward": 498,
+          "distance": 6
+        },
+        {
+          "userId": "934718773158641724",
+          "choice": "ᛈ",
+          "reward": 479,
+          "distance": 7
+        },
+        {
+          "userId": "410210301510811658",
+          "choice": "ᛒ",
+          "reward": 419,
+          "distance": 5
+        },
+        {
+          "userId": "957158824941346826",
+          "choice": "ᛋ",
+          "reward": 296,
+          "distance": 11
+        },
+        {
+          "userId": "614913396156006412",
+          "choice": "ᚺ",
+          "reward": 283,
+          "distance": 8
+        },
+        {
+          "userId": "469495026754256896",
+          "choice": "ᛁ",
+          "reward": 277,
+          "distance": 10
+        },
+        {
+          "userId": "418637037009371139",
+          "choice": "ᛁ",
+          "reward": 254,
+          "distance": 10
+        },
+        {
+          "userId": "870319458642718761",
+          "choice": "ᛇ",
+          "reward": 204,
+          "distance": 10
+        },
+        {
+          "userId": "937818713850277989",
+          "choice": "ᛇ",
+          "reward": 202,
+          "distance": 10
+        },
+        {
+          "userId": "940609428909092866",
+          "choice": "ᛇ",
+          "reward": 194,
+          "distance": 10
+        },
+        {
+          "userId": "868017742043840572",
+          "choice": "ᛋ",
+          "reward": 193,
+          "distance": 11
+        },
+        {
+          "userId": "854755591896170496",
+          "choice": "ᛇ",
+          "reward": 182,
+          "distance": 10
+        },
+        {
+          "userId": "410662767981232128",
+          "choice": "ᚺ",
+          "reward": 167,
+          "distance": 8
+        },
+        {
+          "userId": "1010182386551623830",
+          "choice": "ᚨ",
+          "reward": 166,
+          "distance": 9
+        }
+      ],
+      "timestamp": 1762624813328
     }
   ],
-  "currentChoices": {},
-  "baseReward": 100,
-  "lastBotChoice": "ᛈ",
+  "currentChoices": {
+    "594186420906623003": "ᛟ",
+    "410662767981232128": "ᚨ",
+    "854755591896170496": "ᛇ",
+    "940609428909092866": "ᛞ",
+    "868017742043840572": "ᚱ",
+    "957158824941346826": "ᚨ",
+    "828043904225247284": "ᛏ",
+    "457978369641021441": "ᛇ",
+    "720405725222010964": "ᛗ",
+    "512328241055399947": "ᛋ",
+    "937818713850277989": "ᛃ",
+    "806685777958010880": "ᚱ",
+    "1069248540896940092": "ᚾ",
+    "1210184868831436800": "ᛜ",
+    "1010182386551623830": "ᛇ",
+    "934718773158641724": "ᛟ"
+  },
+  "baseReward": 1000,
+  "lastBotChoice": "ᚹ",
   "grumbleState": null,
   "marketPacks": {
-    "410662767981232128": 1
+    "410662767981232128": 2,
+    "934718773158641724": 1
   },
-  "marketDollars": {}
+  "marketDollars": {
+    "410662767981232128": 1,
+    "940609428909092866": 3,
+    "868017742043840572": 1
+  }
 }

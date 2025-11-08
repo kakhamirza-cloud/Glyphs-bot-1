@@ -1,5 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
-import { GameRuntime, SYMBOLS, SymbolRune, formatDuration, timeLeftMs, getGrumbleTimeLeft, isGrumbleUsingCustomTimer } from './game';
+import { GameRuntime, SYMBOLS, SymbolRune, formatDuration, timeLeftMs, getGrumbleTimeLeft, isGrumbleUsingCustomTimer, PACK_COST } from './game';
 
 export function buildPanel(runtime: GameRuntime) {
     const state = runtime.state.data;
@@ -166,7 +166,7 @@ export function buildMarketView(options: MarketViewOptions) {
         .setDescription(
             [
                 'Purchase packs with GLYPHS and collect dollar rewards.',
-                `• Each pack costs **750 GLYPHS**.`,
+                `• Each pack costs **${PACK_COST.toLocaleString()} GLYPHS**.`,
                 `• Dollar balance caps at **${dollarCap}$**.`,
                 `• Claim becomes available between **${minClaim}$** and **${dollarCap}$**.`,
             ].join('\n')
@@ -191,7 +191,7 @@ export function buildMarketView(options: MarketViewOptions) {
 
     const buyBtn = new ButtonBuilder()
         .setCustomId('market_buy')
-        .setLabel('Buy Pack (750 GLYPHS)')
+        .setLabel(`Buy Pack (${PACK_COST.toLocaleString()} GLYPHS)`)
         .setStyle(ButtonStyle.Primary)
         .setDisabled(!canBuy);
 
