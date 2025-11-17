@@ -1,7 +1,9 @@
 import dayjs from 'dayjs';
 import * as fs from 'fs';
 import * as path from 'path';
-import { openBalances, openState, BalanceMap, PersistedState, MemberResult, BlockHistory, GrumbleState } from './storage';
+import { openBalances, openState, BalanceMap, PersistedState, MemberResult, BlockHistory, GrumbleState, AuctionState } from './storage';
+
+export type { AuctionState };
 import { Interaction, DiscordAPIError } from 'discord.js';
 
 // Ensure no duplicate runes - this will throw an error if duplicates are found
@@ -49,6 +51,10 @@ export async function initGame(): Promise<GameRuntime> {
     };
     runtime.state.data.marketPacks ??= {};
     runtime.state.data.marketDollars ??= {};
+    runtime.state.data.totalClaimedDollars ??= 0;
+    runtime.state.data.claimLimit ??= 80;
+    runtime.state.data.claimButtonDisabled ??= false;
+    runtime.state.data.auctions ??= {};
     return runtime;
 }
 
@@ -190,6 +196,9 @@ export async function resetUserDollars(runtime: GameRuntime, userId: string): Pr
     const current = runtime.state.data.marketDollars[userId] ?? 0;
     if (current > 0) {
         delete runtime.state.data.marketDollars[userId];
+        // Increment total claimed dollars
+        runtime.state.data.totalClaimedDollars ??= 0;
+        runtime.state.data.totalClaimedDollars += current;
         await runtime.state.write();
     }
     return current;
@@ -847,6 +856,194 @@ export function getUserBetInfo(runtime: GameRuntime, userId: string): string {
     }
     
     return info;
+}
+
+// Claim limit management functions
+export function getTotalClaimedDollars(runtime: GameRuntime): number {
+    return runtime.state.data.totalClaimedDollars ?? 0;
+}
+
+export function getClaimLimit(runtime: GameRuntime): number {
+    return runtime.state.data.claimLimit ?? 80;
+}
+
+export function isClaimButtonDisabled(runtime: GameRuntime): boolean {
+    return runtime.state.data.claimButtonDisabled ?? false;
+}
+
+export function isClaimLimitReached(runtime: GameRuntime): boolean {
+    const totalClaimed = getTotalClaimedDollars(runtime);
+    const limit = getClaimLimit(runtime);
+    return totalClaimed >= limit;
+}
+
+export async function setClaimLimit(runtime: GameRuntime, limit: number): Promise<void> {
+    runtime.state.data.claimLimit = limit;
+    await runtime.state.write();
+}
+
+export async function resetClaimCounter(runtime: GameRuntime): Promise<void> {
+    runtime.state.data.totalClaimedDollars = 0;
+    runtime.state.data.claimButtonDisabled = false;
+    await runtime.state.write();
+}
+
+export async function enableClaimButton(runtime: GameRuntime): Promise<void> {
+    runtime.state.data.claimButtonDisabled = false;
+    await runtime.state.write();
+}
+
+export async function disableClaimButton(runtime: GameRuntime): Promise<void> {
+    runtime.state.data.claimButtonDisabled = true;
+    await runtime.state.write();
+}
+
+// Auction management functions
+export function generateAuctionId(): string {
+    return `auction_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+export async function createAuction(
+    runtime: GameRuntime,
+    description: string,
+    rolesToTag: string[],
+    endTime: number,
+    numberOfWinners: number
+): Promise<AuctionState> {
+    runtime.state.data.auctions ??= {};
+    const auctionId = generateAuctionId();
+    const auction: AuctionState = {
+        id: auctionId,
+        description,
+        rolesToTag,
+        endTime,
+        numberOfWinners,
+        bids: {},
+        messageId: null,
+        channelId: null,
+        isActive: true,
+        ended: false,
+    };
+    runtime.state.data.auctions[auctionId] = auction;
+    await runtime.state.write();
+    return auction;
+}
+
+export function getAuction(runtime: GameRuntime, auctionId: string): AuctionState | null {
+    runtime.state.data.auctions ??= {};
+    return runtime.state.data.auctions[auctionId] || null;
+}
+
+export function getActiveAuctions(runtime: GameRuntime): AuctionState[] {
+    runtime.state.data.auctions ??= {};
+    const now = Date.now();
+    return Object.values(runtime.state.data.auctions).filter(
+        (auction) => auction.isActive && !auction.ended && auction.endTime > now
+    );
+}
+
+export async function updateAuctionMessage(
+    runtime: GameRuntime,
+    auctionId: string,
+    messageId: string,
+    channelId: string
+): Promise<void> {
+    runtime.state.data.auctions ??= {};
+    const auction = runtime.state.data.auctions[auctionId];
+    if (auction) {
+        auction.messageId = messageId;
+        auction.channelId = channelId;
+        await runtime.state.write();
+    }
+}
+
+export async function placeBid(
+    runtime: GameRuntime,
+    auctionId: string,
+    userId: string,
+    amount: number
+): Promise<{ success: boolean; error?: string }> {
+    runtime.state.data.auctions ??= {};
+    const auction = runtime.state.data.auctions[auctionId];
+    if (!auction) {
+        return { success: false, error: 'Auction not found' };
+    }
+    if (auction.ended || !auction.isActive) {
+        return { success: false, error: 'Auction has ended' };
+    }
+    if (Date.now() >= auction.endTime) {
+        return { success: false, error: 'Auction has ended' };
+    }
+    if (auction.bids[userId] !== undefined) {
+        return { success: false, error: 'You already placed a bid' };
+    }
+    const userBalance = runtime.balances.data[userId] ?? 0;
+    if (amount <= 0) {
+        return { success: false, error: 'Bid amount must be greater than 0' };
+    }
+    if (amount > userBalance) {
+        return { success: false, error: `You don't have enough GLYPHS. Your balance: ${userBalance.toLocaleString()}` };
+    }
+    // Deduct GLYPHS immediately
+    runtime.balances.data[userId] = userBalance - amount;
+    await runtime.balances.write();
+    // Record bid
+    auction.bids[userId] = amount;
+    await runtime.state.write();
+    return { success: true };
+}
+
+export function getUserBid(runtime: GameRuntime, auctionId: string, userId: string): number | null {
+    runtime.state.data.auctions ??= {};
+    const auction = runtime.state.data.auctions[auctionId];
+    if (!auction) return null;
+    return auction.bids[userId] ?? null;
+}
+
+export function getAuctionLeaderboard(runtime: GameRuntime, auctionId: string): Array<{ userId: string; bid: number }> {
+    runtime.state.data.auctions ??= {};
+    const auction = runtime.state.data.auctions[auctionId];
+    if (!auction) return [];
+    return Object.entries(auction.bids)
+        .map(([userId, bid]) => ({ userId, bid }))
+        .sort((a, b) => b.bid - a.bid);
+}
+
+export function getUserRank(runtime: GameRuntime, auctionId: string, userId: string): number | null {
+    const leaderboard = getAuctionLeaderboard(runtime, auctionId);
+    const index = leaderboard.findIndex((entry) => entry.userId === userId);
+    return index >= 0 ? index + 1 : null;
+}
+
+export async function resolveAuction(runtime: GameRuntime, auctionId: string): Promise<void> {
+    runtime.state.data.auctions ??= {};
+    const auction = runtime.state.data.auctions[auctionId];
+    if (!auction || auction.ended) return;
+    
+    auction.ended = true;
+    auction.isActive = false;
+    
+    const leaderboard = getAuctionLeaderboard(runtime, auctionId);
+    const winners = leaderboard.slice(0, auction.numberOfWinners);
+    const winnerIds = new Set(winners.map((w) => w.userId));
+    
+    // Deduct GLYPHS from losers only (winners keep theirs)
+    for (const [userId, bidAmount] of Object.entries(auction.bids)) {
+        if (!winnerIds.has(userId)) {
+            // Loser - GLYPHS already deducted when they bid, so nothing to do
+            // (they already lost their GLYPHS when they placed the bid)
+        }
+    }
+    
+    await runtime.state.write();
+}
+
+export function getExpiredAuctions(runtime: GameRuntime): AuctionState[] {
+    runtime.state.data.auctions ??= {};
+    const now = Date.now();
+    return Object.values(runtime.state.data.auctions).filter(
+        (auction) => auction.isActive && !auction.ended && auction.endTime <= now
+    );
 }
 
 

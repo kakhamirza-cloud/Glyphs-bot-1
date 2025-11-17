@@ -1,7 +1,7 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes, PermissionFlagsBits, MessageFlags, DiscordAPIError, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes, PermissionFlagsBits, MessageFlags, DiscordAPIError, EmbedBuilder, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } from 'discord.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GameRuntime, setBlockDuration, setCurrentBlock, setTotalRewards, setBaseReward, getLeaderboard, exportMiningData, getUserPackCount, openPackForUser, MARKET_MIN_CLAIM_DOLLARS, MARKET_MAX_DOLLAR_BALANCE } from './game';
+import { GameRuntime, setBlockDuration, setCurrentBlock, setTotalRewards, setBaseReward, getLeaderboard, exportMiningData, getUserPackCount, openPackForUser, MARKET_MIN_CLAIM_DOLLARS, MARKET_MAX_DOLLAR_BALANCE, setClaimLimit, resetClaimCounter, enableClaimButton, getTotalClaimedDollars, getClaimLimit } from './game';
 
 export const commands = [
     new SlashCommandBuilder().setName('start').setDescription('Re-enable the bot after a soft stop (admin only)'),
@@ -32,6 +32,10 @@ export const commands = [
         .addUserOption(o=>o.setName('user').setDescription('User to set glyphs for').setRequired(true))
         .addIntegerOption(o=>o.setName('amount').setDescription('Amount of glyphs to set').setRequired(true)),
     new SlashCommandBuilder().setName('exportdata').setDescription('Export mining data snapshot to JSON (admin only)'),
+    new SlashCommandBuilder().setName('setclaimlimit').setDescription('Set the claim limit for dollars (admin only)').addIntegerOption(o=>o.setName('amount').setDescription('Claim limit amount').setRequired(true)),
+    new SlashCommandBuilder().setName('resetclaimcounter').setDescription('Reset the claimed dollars counter to 0 and re-enable claim button (admin only)'),
+    new SlashCommandBuilder().setName('enableclaim').setDescription('Re-enable the claim button if it was disabled (admin only)'),
+    new SlashCommandBuilder().setName('auction').setDescription('Create a new auction (admin only)'),
 ].map(c=>c.toJSON());
 
 export async function handleSlash(interaction: ChatInputCommandInteraction, runtime: GameRuntime) {
@@ -256,6 +260,87 @@ export async function handleSlash(interaction: ChatInputCommandInteraction, runt
         const leaderboard = await getLeaderboard(runtime, interaction);
         (global as any).__slashLbCache = { content: leaderboard, expiresAt: now + 5000 }; // 5s cache
         return safeReply(leaderboard);
+    }
+    if (interaction.commandName === 'setclaimlimit') {
+        // Only allow admins
+        if (!interaction.memberPermissions || !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+            return safeReply('You do not have permission to use this command.', { flags: MessageFlags.Ephemeral });
+        }
+        const amount = interaction.options.getInteger('amount', true);
+        if (amount <= 0) {
+            return safeReply('Claim limit must be greater than 0.', { flags: MessageFlags.Ephemeral });
+        }
+        await setClaimLimit(runtime, amount);
+        return safeReply(`Claim limit set to ${amount}$. Current claimed: ${getTotalClaimedDollars(runtime)}$/${amount}$`, { flags: MessageFlags.Ephemeral });
+    }
+    if (interaction.commandName === 'resetclaimcounter') {
+        // Only allow admins
+        if (!interaction.memberPermissions || !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+            return safeReply('You do not have permission to use this command.', { flags: MessageFlags.Ephemeral });
+        }
+        await resetClaimCounter(runtime);
+        const limit = getClaimLimit(runtime);
+        return safeReply(`Claim counter reset to 0$/${limit}$. Claim button has been re-enabled.`, { flags: MessageFlags.Ephemeral });
+    }
+    if (interaction.commandName === 'enableclaim') {
+        // Only allow admins
+        if (!interaction.memberPermissions || !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+            return safeReply('You do not have permission to use this command.', { flags: MessageFlags.Ephemeral });
+        }
+        await enableClaimButton(runtime);
+        const totalClaimed = getTotalClaimedDollars(runtime);
+        const limit = getClaimLimit(runtime);
+        return safeReply(`Claim button has been re-enabled. Current claimed: ${totalClaimed}$/${limit}$`, { flags: MessageFlags.Ephemeral });
+    }
+    if (interaction.commandName === 'auction') {
+        // Only allow admins
+        if (!interaction.memberPermissions || !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+            return safeReply('You do not have permission to use this command.', { flags: MessageFlags.Ephemeral });
+        }
+        // Show modal for auction creation
+        const modal = new ModalBuilder()
+            .setCustomId('auction_create_modal')
+            .setTitle('Create Auction');
+        
+        const descriptionInput = new TextInputBuilder()
+            .setCustomId('auction_description')
+            .setLabel('Description')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Enter auction description')
+            .setRequired(true)
+            .setMaxLength(1000);
+        
+        const rolesInput = new TextInputBuilder()
+            .setCustomId('auction_roles')
+            .setLabel('Roles to Tag (comma-separated role IDs)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('123456789,987654321')
+            .setRequired(false);
+        
+        const endTimeInput = new TextInputBuilder()
+            .setCustomId('auction_endtime')
+            .setLabel('End Time (YYYY-MM-DD HH:MM UTC)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('2025-11-18 17:00 (UTC timezone)')
+            .setRequired(true);
+        
+        const winnersInput = new TextInputBuilder()
+            .setCustomId('auction_winners')
+            .setLabel('Number of Winners')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('10')
+            .setRequired(true)
+            .setMaxLength(3);
+        
+        const descriptionRow = new ActionRowBuilder<TextInputBuilder>().addComponents(descriptionInput);
+        const rolesRow = new ActionRowBuilder<TextInputBuilder>().addComponents(rolesInput);
+        const endTimeRow = new ActionRowBuilder<TextInputBuilder>().addComponents(endTimeInput);
+        const winnersRow = new ActionRowBuilder<TextInputBuilder>().addComponents(winnersInput);
+        
+        modal.addComponents(descriptionRow, rolesRow, endTimeRow, winnersRow);
+        
+        await interaction.showModal(modal);
+        return;
     }
     // Note: grumble command is handled in index.ts to avoid duplicate handling
 }

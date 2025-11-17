@@ -1,5 +1,5 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
-import { GameRuntime, SYMBOLS, SymbolRune, formatDuration, timeLeftMs, getGrumbleTimeLeft, isGrumbleUsingCustomTimer, PACK_COST } from './game';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, TextInputBuilder, TextInputStyle, ModalBuilder } from 'discord.js';
+import { GameRuntime, SYMBOLS, SymbolRune, formatDuration, timeLeftMs, getGrumbleTimeLeft, isGrumbleUsingCustomTimer, PACK_COST, getTotalClaimedDollars, getClaimLimit, isClaimButtonDisabled, getAuctionLeaderboard, AuctionState } from './game';
 
 export function buildPanel(runtime: GameRuntime) {
     const state = runtime.state.data;
@@ -156,10 +156,13 @@ export interface MarketViewOptions {
     canClaim: boolean;
     dollarCap: number;
     minClaim: number;
+    totalClaimed: number;
+    claimLimit: number;
+    claimButtonDisabled: boolean;
 }
 
 export function buildMarketView(options: MarketViewOptions) {
-    const { packs, dollars, glyphBalance, canBuy, canClaim, dollarCap, minClaim } = options;
+    const { packs, dollars, glyphBalance, canBuy, canClaim, dollarCap, minClaim, totalClaimed, claimLimit, claimButtonDisabled } = options;
     const embed = new EmbedBuilder()
         .setColor(0x3AA76D)
         .setTitle('Glyphs Market')
@@ -175,13 +178,16 @@ export function buildMarketView(options: MarketViewOptions) {
             { name: 'Packs Owned', value: packs.toString(), inline: true },
             { name: 'Dollar Balance', value: `${dollars}$`, inline: true },
             { name: 'GLYPHS Balance', value: glyphBalance.toLocaleString(), inline: true },
+            { name: 'Claimed Dollars', value: `**${totalClaimed}$/${claimLimit}$**`, inline: false },
         );
 
     if (!canBuy) {
         embed.addFields({ name: 'Buy Status', value: 'Not enough GLYPHS to buy a pack.', inline: false });
     }
 
-    if (!canClaim) {
+    if (claimButtonDisabled) {
+        embed.addFields({ name: 'Claim Status', value: `Claim limit reached (${totalClaimed}$/${claimLimit}$). Claim button is disabled.`, inline: false });
+    } else if (!canClaim) {
         if (dollars >= dollarCap) {
             embed.addFields({ name: 'Claim Status', value: `Dollar balance is capped. Spend or claim once you meet the minimum.`, inline: false });
         } else {
@@ -199,10 +205,88 @@ export function buildMarketView(options: MarketViewOptions) {
         .setCustomId('market_claim')
         .setLabel('Claim Dollars')
         .setStyle(ButtonStyle.Success)
-        .setDisabled(!canClaim);
+        .setDisabled(!canClaim || claimButtonDisabled);
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(buyBtn, claimBtn);
     return { embed, rows: [row] };
+}
+
+// Auction UI functions
+export function buildAuctionEmbed(auction: AuctionState, leaderboard: Array<{ userId: string; bid: number }>, userIdToUsername: Record<string, string>): EmbedBuilder {
+    const now = Date.now();
+    const timeLeft = Math.max(0, auction.endTime - now);
+    const timeLeftFormatted = formatDuration(timeLeft);
+    const endDate = new Date(auction.endTime);
+    const participantCount = Object.keys(auction.bids).length;
+    const isEnded = auction.ended || now >= auction.endTime;
+    
+    const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle('Auction')
+        .setDescription(auction.description || 'Auction')
+        .addFields(
+            { name: 'Ends', value: `${endDate.toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC ${isEnded ? '(Ended)' : `in ${timeLeftFormatted}`}`, inline: true },
+            { name: 'Winners', value: auction.numberOfWinners.toString(), inline: true },
+            { name: 'Spot Type', value: 'Airdrop', inline: true },
+        );
+    
+    // Show top bidders
+    const topBidders = leaderboard.slice(0, auction.numberOfWinners);
+    if (topBidders.length > 0) {
+        let winnersText = '';
+        for (let i = 0; i < topBidders.length; i++) {
+            const entry = topBidders[i];
+            if (entry) {
+                const username = userIdToUsername[entry.userId] || `<@${entry.userId}>`;
+                winnersText += `${i + 1}. ${username} - ${entry.bid.toLocaleString()} GLYPHS\n`;
+            }
+        }
+        embed.addFields({ name: `Winners - Top ${topBidders.length} of ${participantCount} Total Entries`, value: winnersText || 'No bids yet', inline: false });
+    } else {
+        embed.addFields({ name: `Winners - Top ${auction.numberOfWinners} of ${participantCount} Total Entries`, value: 'No bids yet', inline: false });
+    }
+    
+    return embed;
+}
+
+export function buildAuctionButtons(auction: AuctionState, isEnded: boolean): ActionRowBuilder<ButtonBuilder> {
+    const bidBtn = new ButtonBuilder()
+        .setCustomId(`auction_bid_${auction.id}`)
+        .setLabel('Bid')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(isEnded);
+    
+    const viewBidBtn = new ButtonBuilder()
+        .setCustomId(`auction_viewbid_${auction.id}`)
+        .setLabel('View My Bid')
+        .setStyle(ButtonStyle.Secondary);
+    
+    const refreshBtn = new ButtonBuilder()
+        .setCustomId(`auction_refresh_${auction.id}`)
+        .setLabel('Refresh')
+        .setStyle(ButtonStyle.Secondary);
+    
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(bidBtn, viewBidBtn, refreshBtn);
+}
+
+export function buildBidModal(auctionId: string): ModalBuilder {
+    const modal = new ModalBuilder()
+        .setCustomId(`auction_bidmodal_${auctionId}`)
+        .setTitle('Place Your Bid');
+    
+    const bidInput = new TextInputBuilder()
+        .setCustomId('bid_amount')
+        .setLabel('Bid Amount (GLYPHS)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter amount of GLYPHS to bid')
+        .setRequired(true)
+        .setMinLength(1)
+        .setMaxLength(10);
+    
+    const row = new ActionRowBuilder<TextInputBuilder>().addComponents(bidInput);
+    modal.addComponents(row);
+    
+    return modal;
 }
 
 

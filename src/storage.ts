@@ -22,6 +22,19 @@ export interface GrumbleState {
     customTimerEndsAt?: number; // When custom timer ends (epoch ms)
 }
 
+export interface AuctionState {
+    id: string; // Unique auction ID
+    description: string;
+    rolesToTag: string[]; // Array of role IDs
+    endTime: number; // epoch ms
+    numberOfWinners: number;
+    bids: Record<string, number>; // userId -> bid amount in GLYPHS
+    messageId: string | null;
+    channelId: string | null;
+    isActive: boolean;
+    ended: boolean;
+}
+
 export interface BlockHistory {
     blockNumber: number;
     botChoice: string;
@@ -50,6 +63,10 @@ export interface PersistedState {
     grumbleState: GrumbleState | null; // Persist grumble game state
     marketPacks: Record<string, number>;
     marketDollars: Record<string, number>;
+    totalClaimedDollars: number; // Total dollars claimed by all users
+    claimLimit: number; // Configurable claim limit (default: 80)
+    claimButtonDisabled: boolean; // Whether claim button is permanently disabled
+    auctions: Record<string, AuctionState>; // auctionId -> AuctionState
 }
 
 export interface DBSchema {
@@ -88,6 +105,12 @@ export class StorageManager {
                 if (!data.grumbleState) data.grumbleState = null;
                 if (!data.marketPacks) data.marketPacks = {};
                 if (!data.marketDollars) data.marketDollars = {};
+                // Ensure claim tracking fields exist
+                if (typeof data.totalClaimedDollars !== 'number') data.totalClaimedDollars = 0;
+                if (typeof data.claimLimit !== 'number') data.claimLimit = 80;
+                if (typeof data.claimButtonDisabled !== 'boolean') data.claimButtonDisabled = false;
+                // Ensure auctions field exists
+                if (!data.auctions) data.auctions = {};
                 return data;
             }
         } catch (error) {
@@ -106,6 +129,10 @@ export class StorageManager {
             grumbleState: null,
             marketPacks: {},
             marketDollars: {},
+            totalClaimedDollars: 0,
+            claimLimit: 80,
+            claimButtonDisabled: false,
+            auctions: {},
         };
     }
 

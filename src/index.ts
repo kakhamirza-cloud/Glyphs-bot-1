@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
-import { Client, GatewayIntentBits, Interaction, MessageComponentInteraction, StringSelectMenuInteraction, Events, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, MessageFlags, DiscordAPIError, GuildMember, PartialGuildMember, EmbedBuilder } from 'discord.js';
-import { buildChoiceMenu, buildPanel, buildGrumbleRuneSelection, buildGrumbleAmountInput, buildMarketView } from './ui';
-import { GameRuntime, initGame, recordChoice, SYMBOLS, SymbolRune, startTicker, getBalance, getLastBlockRewardInfo, getUserRewardRecords, getLeaderboard, pickRandomSymbol, symbolDistance, saveGrumbleState, getGrumbleState, clearGrumbleState, isGrumbleActive, shouldGrumbleEnd, setUserGlyphs, getUserBetInfo, getUserPackCount, getUserDollarBalance, addPackToUser, PACK_COST, MARKET_MIN_CLAIM_DOLLARS, MARKET_MAX_DOLLAR_BALANCE, MARKET_PURCHASE_IMAGE_URL, openPackForUser, canClaimDollars, resetUserDollars } from './game';
+import { Client, GatewayIntentBits, Interaction, MessageComponentInteraction, StringSelectMenuInteraction, Events, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, MessageFlags, DiscordAPIError, GuildMember, PartialGuildMember, EmbedBuilder, ModalSubmitInteraction } from 'discord.js';
+import { buildChoiceMenu, buildPanel, buildGrumbleRuneSelection, buildGrumbleAmountInput, buildMarketView, buildAuctionEmbed, buildAuctionButtons, buildBidModal } from './ui';
+import { GameRuntime, initGame, recordChoice, SYMBOLS, SymbolRune, startTicker, getBalance, getLastBlockRewardInfo, getUserRewardRecords, getLeaderboard, pickRandomSymbol, symbolDistance, saveGrumbleState, getGrumbleState, clearGrumbleState, isGrumbleActive, shouldGrumbleEnd, setUserGlyphs, getUserBetInfo, getUserPackCount, getUserDollarBalance, addPackToUser, PACK_COST, MARKET_MIN_CLAIM_DOLLARS, MARKET_MAX_DOLLAR_BALANCE, MARKET_PURCHASE_IMAGE_URL, openPackForUser, canClaimDollars, resetUserDollars, getTotalClaimedDollars, getClaimLimit, isClaimButtonDisabled, isClaimLimitReached, disableClaimButton, createAuction, getAuction, getActiveAuctions, updateAuctionMessage, placeBid, getUserBid, getAuctionLeaderboard, getUserRank, resolveAuction, getExpiredAuctions } from './game';
 import { GrumbleState } from './storage';
 import { handleSlash } from './commands';
 import { buildGrumblePanel } from './ui';
@@ -392,7 +392,10 @@ function buildMarketPayload(runtime: GameRuntime, userId: string) {
     const dollars = getUserDollarBalance(runtime, userId);
     const glyphBalance = getBalance(runtime, userId);
     const canBuy = glyphBalance >= PACK_COST;
-    const canClaim = canClaimDollars(dollars) && dollars <= MARKET_MAX_DOLLAR_BALANCE;
+    const claimButtonDisabled = isClaimButtonDisabled(runtime);
+    const canClaim = !claimButtonDisabled && canClaimDollars(dollars) && dollars <= MARKET_MAX_DOLLAR_BALANCE;
+    const totalClaimed = getTotalClaimedDollars(runtime);
+    const claimLimit = getClaimLimit(runtime);
     const { embed, rows } = buildMarketView({
         packs,
         dollars,
@@ -401,6 +404,9 @@ function buildMarketPayload(runtime: GameRuntime, userId: string) {
         canClaim,
         dollarCap: MARKET_MAX_DOLLAR_BALANCE,
         minClaim: MARKET_MIN_CLAIM_DOLLARS,
+        totalClaimed,
+        claimLimit,
+        claimButtonDisabled,
     });
     return { embed, rows, packs, dollars, glyphBalance, canBuy, canClaim };
 }
@@ -981,6 +987,15 @@ async function main() {
             }
             if (interaction.customId === 'market_claim') {
                 const userId = interaction.user.id;
+                
+                // Check if claim button is disabled
+                if (isClaimButtonDisabled(runtime)) {
+                    return interaction.reply({
+                        content: 'Claim button is currently disabled. The claim limit has been reached.',
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+                
                 const dollars = getUserDollarBalance(runtime, userId);
                 if (!canClaimDollars(dollars) || dollars > MARKET_MAX_DOLLAR_BALANCE) {
                     return interaction.reply({
@@ -995,6 +1010,17 @@ async function main() {
                          flags: MessageFlags.Ephemeral,
                      });
                  }
+                
+                // Check if limit is reached after this claim
+                const totalClaimed = getTotalClaimedDollars(runtime);
+                const claimLimit = getClaimLimit(runtime);
+                const limitReached = isClaimLimitReached(runtime);
+                
+                if (limitReached) {
+                    // Disable claim button permanently
+                    await disableClaimButton(runtime);
+                }
+                
                 const payload = buildMarketPayload(runtime, userId);
                 await interaction.update({
                     content: '🛒 Your market status:',
@@ -1005,13 +1031,27 @@ async function main() {
                     content: `You claimed **${claimed}$**. Dollar balance reset to 0.`,
                     flags: MessageFlags.Ephemeral,
                 });
-                try {
-                    const channel = await interaction.client.channels.fetch(MARKET_NOTIFICATION_CHANNEL_ID);
-                    if (channel && channel.isTextBased()) {
-                        await (channel as TextChannel).send(`<@${MARKET_CLAIM_NOTIFY_USER_ID}> <@${userId}> claimed **${claimed}$** from the market.`);
+                
+                // Send notification if limit reached
+                if (limitReached) {
+                    try {
+                        const channel = await interaction.client.channels.fetch(MARKET_NOTIFICATION_CHANNEL_ID);
+                        if (channel && channel.isTextBased()) {
+                            await (channel as TextChannel).send(`<@${MARKET_CLAIM_NOTIFY_USER_ID}> Claimed dollars limit reached: **${totalClaimed}$/${claimLimit}$**`);
+                        }
+                    } catch (error) {
+                        console.error('Failed to send claim limit notification:', error);
                     }
-                } catch (error) {
-                    console.error('Failed to send market claim notification:', error);
+                } else {
+                    // Regular claim notification
+                    try {
+                        const channel = await interaction.client.channels.fetch(MARKET_NOTIFICATION_CHANNEL_ID);
+                        if (channel && channel.isTextBased()) {
+                            await (channel as TextChannel).send(`<@${MARKET_CLAIM_NOTIFY_USER_ID}> <@${userId}> claimed **${claimed}$** from the market.`);
+                        }
+                    } catch (error) {
+                        console.error('Failed to send market claim notification:', error);
+                    }
                 }
                 return;
             }
@@ -1192,6 +1232,55 @@ async function main() {
             }
         }
 
+        // Handle auction bid button
+        if (interaction.isButton() && interaction.customId.startsWith('auction_bid_')) {
+            const auctionId = interaction.customId.replace('auction_bid_', '');
+            const auction = getAuction(runtime, auctionId);
+            if (!auction) {
+                return safeReply('Auction not found.', { flags: MessageFlags.Ephemeral });
+            }
+            const now = Date.now();
+            if (auction.ended || now >= auction.endTime) {
+                return safeReply('This auction has ended.', { flags: MessageFlags.Ephemeral });
+            }
+            const hasBid = getUserBid(runtime, auctionId, interaction.user.id) !== null;
+            if (hasBid) {
+                return safeReply('You already placed a bid.', { flags: MessageFlags.Ephemeral });
+            }
+            const modal = buildBidModal(auctionId);
+            await interaction.showModal(modal);
+            return;
+        }
+        
+        // Handle auction view bid button
+        if (interaction.isButton() && interaction.customId.startsWith('auction_viewbid_')) {
+            const auctionId = interaction.customId.replace('auction_viewbid_', '');
+            const auction = getAuction(runtime, auctionId);
+            if (!auction) {
+                return safeReply('Auction not found.', { flags: MessageFlags.Ephemeral });
+            }
+            const bid = getUserBid(runtime, auctionId, interaction.user.id);
+            if (bid === null) {
+                return safeReply('You have not placed a bid yet.', { flags: MessageFlags.Ephemeral });
+            }
+            const rank = getUserRank(runtime, auctionId, interaction.user.id);
+            const isWinner = rank !== null && rank <= auction.numberOfWinners;
+            let message = `**Your Bid:** ${bid.toLocaleString()} GLYPHS\n**Rank:** ${rank}\n`;
+            if (isWinner) {
+                message += '**Status:** ✅ You are currently in the winning position!';
+            } else {
+                message += '**Status:** ❌ You are not currently in the winning position.';
+            }
+            return safeReply(message, { flags: MessageFlags.Ephemeral });
+        }
+        
+        // Handle auction refresh button
+        if (interaction.isButton() && interaction.customId.startsWith('auction_refresh_')) {
+            const auctionId = interaction.customId.replace('auction_refresh_', '');
+            await refreshAuctionMessage(client, runtime, auctionId, interaction.user.id);
+            return safeReply('Auction refreshed.', { flags: MessageFlags.Ephemeral });
+        }
+        
         // Future-proof: apply similar throttles to select menus if added later
         if (interaction.isStringSelectMenu && interaction.isStringSelectMenu()) {
             const userSelectCooldownMs = 750;
@@ -1220,7 +1309,223 @@ async function main() {
                 return;
             }
         }
+        
+        // Handle modal submissions
+        if (interaction.isModalSubmit()) {
+            const modalInteraction = interaction as ModalSubmitInteraction;
+            
+            // Handle auction creation modal
+            if (modalInteraction.customId === 'auction_create_modal') {
+                if (!modalInteraction.memberPermissions || !modalInteraction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+                    return safeReply('You do not have permission to create auctions.', { flags: MessageFlags.Ephemeral });
+                }
+                
+                const description = modalInteraction.fields.getTextInputValue('auction_description');
+                const rolesStr = modalInteraction.fields.getTextInputValue('auction_roles') || '';
+                const endTimeStr = modalInteraction.fields.getTextInputValue('auction_endtime');
+                const winnersStr = modalInteraction.fields.getTextInputValue('auction_winners');
+                
+                // Parse roles
+                const rolesToTag = rolesStr.split(',').map(r => r.trim()).filter(r => r.length > 0);
+                
+                // Parse end time (YYYY-MM-DD HH:MM UTC)
+                let endTime: number;
+                try {
+                    const parts = endTimeStr.split(' ');
+                    if (parts.length < 2) {
+                        throw new Error('Invalid format');
+                    }
+                    const datePart = parts[0];
+                    const timePart = parts[1];
+                    if (!datePart || !timePart) {
+                        throw new Error('Invalid format');
+                    }
+                    const dateParts = datePart.split('-').map(Number);
+                    const timeParts = timePart.split(':').map(Number);
+                    if (dateParts.length < 3 || timeParts.length < 2) {
+                        throw new Error('Invalid format');
+                    }
+                    const [year, month, day] = dateParts;
+                    const [hour, minute] = timeParts;
+                    if (year === undefined || month === undefined || day === undefined || hour === undefined || minute === undefined) {
+                        throw new Error('Invalid format');
+                    }
+                    // Use UTC timezone explicitly
+                    endTime = Date.UTC(year, month - 1, day, hour, minute);
+                    if (isNaN(endTime) || endTime <= Date.now()) {
+                        return safeReply('Invalid end time. Please use format: YYYY-MM-DD HH:MM UTC and ensure it is in the future.', { flags: MessageFlags.Ephemeral });
+                    }
+                } catch (error) {
+                    return safeReply('Invalid end time format. Please use: YYYY-MM-DD HH:MM UTC (e.g., 2025-11-18 17:00)', { flags: MessageFlags.Ephemeral });
+                }
+                
+                // Parse number of winners
+                const numberOfWinners = parseInt(winnersStr, 10);
+                if (isNaN(numberOfWinners) || numberOfWinners <= 0) {
+                    return safeReply('Invalid number of winners. Please enter a positive number.', { flags: MessageFlags.Ephemeral });
+                }
+                
+                // Create auction
+                const auction = await createAuction(runtime, description, rolesToTag, endTime, numberOfWinners);
+                
+                // Build and send auction message
+                const leaderboard = getAuctionLeaderboard(runtime, auction.id);
+                const userIds = new Set<string>();
+                leaderboard.forEach(entry => userIds.add(entry.userId));
+                
+                const userIdToUsername: Record<string, string> = {};
+                for (const uid of Array.from(userIds)) {
+                    try {
+                        const user = await modalInteraction.client.users.fetch(uid);
+                        userIdToUsername[uid] = user.username;
+                    } catch {
+                        userIdToUsername[uid] = uid;
+                    }
+                }
+                
+                const embed = buildAuctionEmbed(auction, leaderboard, userIdToUsername);
+                const buttons = buildAuctionButtons(auction, false);
+                
+                let content = '';
+                if (rolesToTag.length > 0) {
+                    const roleMentions = rolesToTag.map(roleId => `<@&${roleId}>`).join(' ');
+                    content = `${roleMentions} New auction started!`;
+                }
+                
+                if (!modalInteraction.channel || !modalInteraction.channel.isTextBased()) {
+                    return safeReply('Cannot post auction in this channel.', { flags: MessageFlags.Ephemeral });
+                }
+                
+                const message = await (modalInteraction.channel as TextChannel).send({
+                    content,
+                    embeds: [embed],
+                    components: [buttons],
+                });
+                
+                await updateAuctionMessage(runtime, auction.id, message.id, message.channel.id);
+                
+                await modalInteraction.reply({
+                    content: 'Auction created successfully!',
+                    flags: MessageFlags.Ephemeral,
+                });
+                return;
+            }
+            
+            // Handle bid modal
+            if (modalInteraction.customId.startsWith('auction_bidmodal_')) {
+                const auctionId = modalInteraction.customId.replace('auction_bidmodal_', '');
+                const bidAmountStr = modalInteraction.fields.getTextInputValue('bid_amount');
+                
+                const bidAmount = parseInt(bidAmountStr, 10);
+                if (isNaN(bidAmount) || bidAmount <= 0) {
+                    return safeReply('Invalid bid amount. Please enter a positive number.', { flags: MessageFlags.Ephemeral });
+                }
+                
+                const result = await placeBid(runtime, auctionId, modalInteraction.user.id, bidAmount);
+                if (!result.success) {
+                    return safeReply(result.error || 'Failed to place bid.', { flags: MessageFlags.Ephemeral });
+                }
+                
+                // Refresh auction message
+                await refreshAuctionMessage(client, runtime, auctionId, modalInteraction.user.id);
+                
+                await modalInteraction.reply({
+                    content: `Bid placed successfully! You bid ${bidAmount.toLocaleString()} GLYPHS.`,
+                    flags: MessageFlags.Ephemeral,
+                });
+                return;
+            }
+        }
     });
+    
+    // Helper function to refresh auction message
+    async function refreshAuctionMessage(client: Client, runtime: GameRuntime, auctionId: string, userId?: string) {
+        const auction = getAuction(runtime, auctionId);
+        if (!auction || !auction.messageId || !auction.channelId) return;
+        
+        try {
+            const channel = await client.channels.fetch(auction.channelId);
+            if (!channel || !channel.isTextBased()) return;
+            
+            const message = await (channel as TextChannel).messages.fetch(auction.messageId);
+            const leaderboard = getAuctionLeaderboard(runtime, auctionId);
+            const userIds = new Set<string>();
+            leaderboard.forEach(entry => userIds.add(entry.userId));
+            
+            const userIdToUsername: Record<string, string> = {};
+            for (const uid of Array.from(userIds)) {
+                try {
+                    const user = await client.users.fetch(uid);
+                    userIdToUsername[uid] = user.username;
+                } catch {
+                    userIdToUsername[uid] = uid;
+                }
+            }
+            
+            const embed = buildAuctionEmbed(auction, leaderboard, userIdToUsername);
+            const now = Date.now();
+            const isEnded = auction.ended || now >= auction.endTime;
+            const buttons = buildAuctionButtons(auction, isEnded);
+            
+            await message.edit({ embeds: [embed], components: [buttons] });
+        } catch (error) {
+            console.error('Error refreshing auction message:', error);
+        }
+    }
+    
+    // Check for expired auctions periodically
+    setInterval(async () => {
+        const expiredAuctions = getExpiredAuctions(runtime);
+        for (const auction of expiredAuctions) {
+            await resolveAuction(runtime, auction.id);
+            
+            // Update auction message to show ended state
+            if (auction.messageId && auction.channelId) {
+                try {
+                    const channel = await client.channels.fetch(auction.channelId);
+                    if (channel && channel.isTextBased()) {
+                        const message = await (channel as TextChannel).messages.fetch(auction.messageId);
+                        const leaderboard = getAuctionLeaderboard(runtime, auction.id);
+                        const userIds = new Set<string>();
+                        leaderboard.forEach(entry => userIds.add(entry.userId));
+                        
+                        const userIdToUsername: Record<string, string> = {};
+                        for (const uid of Array.from(userIds)) {
+                            try {
+                                const user = await client.users.fetch(uid);
+                                userIdToUsername[uid] = user.username;
+                            } catch {
+                                userIdToUsername[uid] = uid;
+                            }
+                        }
+                        
+                        const embed = buildAuctionEmbed(auction, leaderboard, userIdToUsername);
+                        const buttons = buildAuctionButtons(auction, true);
+                        
+                        await message.edit({ embeds: [embed], components: [buttons] });
+                        
+                        // Announce winners
+                        const winners = leaderboard.slice(0, auction.numberOfWinners);
+                        if (winners.length > 0) {
+                            let winnerText = '**Auction Ended! Winners:**\n';
+                            for (let i = 0; i < winners.length; i++) {
+                                const winner = winners[i];
+                                if (winner) {
+                                    const username = userIdToUsername[winner.userId] || `<@${winner.userId}>`;
+                                    winnerText += `${i + 1}. ${username} - ${winner.bid.toLocaleString()} GLYPHS\n`;
+                                }
+                            }
+                            await (channel as TextChannel).send(winnerText);
+                        } else {
+                            await (channel as TextChannel).send('**Auction Ended!** No bids were placed.');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error updating expired auction:', error);
+                }
+            }
+        }
+    }, 60000); // Check every minute
 
     // Simple health check server for Railway
     const app = express();
