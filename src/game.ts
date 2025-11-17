@@ -126,13 +126,13 @@ export interface PackPrizeDefinition {
 }
 
 const PACK_PRIZE_DEFINITIONS: PackPrizeDefinition[] = [
-    { id: 'glyphs_250', label: '250 GLYPHS', type: 'glyphs', amount: 250, weight: 450, imageUrl: 'https://i.imgur.com/SwuzzoO.png' },
-    { id: 'glyphs_500', label: '500 GLYPHS', type: 'glyphs', amount: 500, weight: 300, imageUrl: 'https://i.imgur.com/WK6QAsK.png' },
-    { id: 'glyphs_750', label: '750 GLYPHS', type: 'glyphs', amount: 750, weight: 150, imageUrl: 'https://i.imgur.com/1oBOxsi.png' },
-    { id: 'dollar_1', label: '$1', type: 'dollar', amount: 1, weight: 50, imageUrl: 'https://i.imgur.com/oyPLjoG.png' },
-    { id: 'dollar_2', label: '$2', type: 'dollar', amount: 2, weight: 30, imageUrl: 'https://i.imgur.com/UHvsr15.png' },
-    { id: 'dollar_3', label: '$3', type: 'dollar', amount: 3, weight: 15, imageUrl: 'https://i.imgur.com/Tgrt4ow.png' },
-    { id: 'dollar_4', label: '$4', type: 'dollar', amount: 4, weight: 5, imageUrl: 'https://i.imgur.com/UOl6uz0.png' },
+    { id: 'glyphs_250', label: '250 GLYPHS', type: 'glyphs', amount: 250, weight: 750, imageUrl: 'https://i.imgur.com/SwuzzoO.png' },
+    { id: 'glyphs_500', label: '500 GLYPHS', type: 'glyphs', amount: 500, weight: 150, imageUrl: 'https://i.imgur.com/WK6QAsK.png' },
+    { id: 'glyphs_750', label: '750 GLYPHS', type: 'glyphs', amount: 750, weight: 60, imageUrl: 'https://i.imgur.com/1oBOxsi.png' },
+    { id: 'dollar_1', label: '$1', type: 'dollar', amount: 1, weight: 25, imageUrl: 'https://i.imgur.com/oyPLjoG.png' },
+    { id: 'dollar_2', label: '$2', type: 'dollar', amount: 2, weight: 10, imageUrl: 'https://i.imgur.com/UHvsr15.png' },
+    { id: 'dollar_3', label: '$3', type: 'dollar', amount: 3, weight: 4, imageUrl: 'https://i.imgur.com/Tgrt4ow.png' },
+    { id: 'dollar_4', label: '$4', type: 'dollar', amount: 4, weight: 1, imageUrl: 'https://i.imgur.com/UOl6uz0.png' },
 ];
 
 export function getUserPackCount(runtime: GameRuntime, userId: string): number {
