@@ -2498,5 +2498,8 @@
     "410662767981232128": 1,
     "940609428909092866": 3,
     "868017742043840572": 1
-  }
+  },
+  "totalClaimedDollars": 51,
+  "claimLimit": 80,
+  "claimButtonDisabled": false
 }
