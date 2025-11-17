@@ -1,8 +1,10 @@
 {
-  "currentBlock": 45,
+  "currentBlock": 59,
   "totalRewardsPerBlock": 1500000,
+  "baseReward": 300,
   "blockDurationSec": 86400,
-  "nextBlockAt": 1762711318160,
+  "nextBlockAt": 1763479217552,
+  "lastBotChoice": "ᛋ",
   "blockHistory": [
     {
       "blockNumber": 29,
@@ -2487,8 +2489,6 @@
     "1010182386551623830": "ᛇ",
     "934718773158641724": "ᛟ"
   },
-  "baseReward": 1000,
-  "lastBotChoice": "ᚹ",
   "grumbleState": null,
   "marketPacks": {
     "410662767981232128": 2,
