@@ -1243,10 +1243,7 @@ async function main() {
             if (auction.ended || now >= auction.endTime) {
                 return safeReply('This auction has ended.', { flags: MessageFlags.Ephemeral });
             }
-            const hasBid = getUserBid(runtime, auctionId, interaction.user.id) !== null;
-            if (hasBid) {
-                return safeReply('You already placed a bid.', { flags: MessageFlags.Ephemeral });
-            }
+            // Allow multiple bids - validation happens in placeBid function
             const modal = buildBidModal(auctionId);
             await interaction.showModal(modal);
             return;

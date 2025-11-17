@@ -974,20 +974,31 @@ export async function placeBid(
     if (Date.now() >= auction.endTime) {
         return { success: false, error: 'Auction has ended' };
     }
-    if (auction.bids[userId] !== undefined) {
-        return { success: false, error: 'You already placed a bid' };
-    }
+    const previousBid = auction.bids[userId] ?? 0;
     const userBalance = runtime.balances.data[userId] ?? 0;
+    
     if (amount <= 0) {
         return { success: false, error: 'Bid amount must be greater than 0' };
     }
-    if (amount > userBalance) {
-        return { success: false, error: `You don't have enough GLYPHS. Your balance: ${userBalance.toLocaleString()}` };
+    
+    // If user has a previous bid, new bid must be higher
+    if (previousBid > 0 && amount <= previousBid) {
+        return { success: false, error: `Your new bid must be higher than your previous bid of ${previousBid.toLocaleString()} GLYPHS` };
     }
-    // Deduct GLYPHS immediately
-    runtime.balances.data[userId] = userBalance - amount;
+    
+    // Calculate balance after refunding previous bid
+    const balanceAfterRefund = userBalance + previousBid;
+    
+    // Check if user has enough balance for the new bid
+    if (amount > balanceAfterRefund) {
+        return { success: false, error: `You don't have enough GLYPHS. Your balance after refund: ${balanceAfterRefund.toLocaleString()}, required: ${amount.toLocaleString()}` };
+    }
+    
+    // Refund previous bid (if any) and deduct new bid
+    runtime.balances.data[userId] = balanceAfterRefund - amount;
     await runtime.balances.write();
-    // Record bid
+    
+    // Record/replace bid
     auction.bids[userId] = amount;
     await runtime.state.write();
     return { success: true };
