@@ -227,7 +227,6 @@ export function buildAuctionEmbed(auction: AuctionState, leaderboard: Array<{ us
         .addFields(
             { name: 'Ends', value: `${endDate.toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC ${isEnded ? '(Ended)' : `in ${timeLeftFormatted}`}`, inline: true },
             { name: 'Winners', value: auction.numberOfWinners.toString(), inline: true },
-            { name: 'Spot Type', value: 'Airdrop', inline: true },
         );
     
     // Show top bidders
