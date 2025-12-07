@@ -1044,13 +1044,13 @@ async function main() {
                     }
                 } else {
                     // Regular claim notification
-                    try {
-                        const channel = await interaction.client.channels.fetch(MARKET_NOTIFICATION_CHANNEL_ID);
-                        if (channel && channel.isTextBased()) {
-                            await (channel as TextChannel).send(`<@${MARKET_CLAIM_NOTIFY_USER_ID}> <@${userId}> claimed **${claimed}$** from the market.`);
-                        }
-                    } catch (error) {
-                        console.error('Failed to send market claim notification:', error);
+                try {
+                    const channel = await interaction.client.channels.fetch(MARKET_NOTIFICATION_CHANNEL_ID);
+                    if (channel && channel.isTextBased()) {
+                        await (channel as TextChannel).send(`<@${MARKET_CLAIM_NOTIFY_USER_ID}> <@${userId}> claimed **${claimed}$** from the market.`);
+                    }
+                } catch (error) {
+                    console.error('Failed to send market claim notification:', error);
                     }
                 }
                 return;
@@ -1277,7 +1277,7 @@ async function main() {
             await refreshAuctionMessage(client, runtime, auctionId, interaction.user.id);
             return safeReply('Auction refreshed.', { flags: MessageFlags.Ephemeral });
         }
-        
+
         // Future-proof: apply similar throttles to select menus if added later
         if (interaction.isStringSelectMenu && interaction.isStringSelectMenu()) {
             const userSelectCooldownMs = 750;
@@ -1362,6 +1362,12 @@ async function main() {
                     return safeReply('Invalid number of winners. Please enter a positive number.', { flags: MessageFlags.Ephemeral });
                 }
                 
+                // Reply immediately to prevent interaction timeout
+                await modalInteraction.reply({
+                    content: 'Creating auction...',
+                    flags: MessageFlags.Ephemeral,
+                });
+                
                 // Create auction
                 const auction = await createAuction(runtime, description, rolesToTag, endTime, numberOfWinners);
                 
@@ -1390,7 +1396,8 @@ async function main() {
                 }
                 
                 if (!modalInteraction.channel || !modalInteraction.channel.isTextBased()) {
-                    return safeReply('Cannot post auction in this channel.', { flags: MessageFlags.Ephemeral });
+                    await modalInteraction.editReply('Cannot post auction in this channel.');
+                    return;
                 }
                 
                 const message = await (modalInteraction.channel as TextChannel).send({
@@ -1401,10 +1408,7 @@ async function main() {
                 
                 await updateAuctionMessage(runtime, auction.id, message.id, message.channel.id);
                 
-                await modalInteraction.reply({
-                    content: 'Auction created successfully!',
-                    flags: MessageFlags.Ephemeral,
-                });
+                await modalInteraction.editReply('Auction created successfully!');
                 return;
             }
             
@@ -1418,18 +1422,22 @@ async function main() {
                     return safeReply('Invalid bid amount. Please enter a positive number.', { flags: MessageFlags.Ephemeral });
                 }
                 
+                // Reply immediately to prevent interaction timeout
+                await modalInteraction.reply({
+                    content: 'Placing bid...',
+                    flags: MessageFlags.Ephemeral,
+                });
+                
                 const result = await placeBid(runtime, auctionId, modalInteraction.user.id, bidAmount);
                 if (!result.success) {
-                    return safeReply(result.error || 'Failed to place bid.', { flags: MessageFlags.Ephemeral });
+                    await modalInteraction.editReply(result.error || 'Failed to place bid.');
+                    return;
                 }
                 
                 // Refresh auction message
                 await refreshAuctionMessage(client, runtime, auctionId, modalInteraction.user.id);
                 
-                await modalInteraction.reply({
-                    content: `Bid placed successfully! You bid ${bidAmount.toLocaleString()} GLYPHS.`,
-                    flags: MessageFlags.Ephemeral,
-                });
+                await modalInteraction.editReply(`Bid placed successfully! You bid ${bidAmount.toLocaleString()} GLYPHS.`);
                 return;
             }
         }
