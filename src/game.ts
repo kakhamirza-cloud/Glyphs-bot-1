@@ -375,12 +375,8 @@ export async function resolveBlock(runtime: GameRuntime, botChoice: SymbolRune) 
     
     runtime.state.data.blockHistory.push(blockHistory);
     
-    // Keep only the most recent 10 blocks to avoid Discord issues
-    if (runtime.state.data.blockHistory.length > 10) {
-        runtime.state.data.blockHistory = runtime.state.data.blockHistory
-            .sort((a: BlockHistory, b: BlockHistory) => b.blockNumber - a.blockNumber)
-            .slice(0, 10);
-    }
+    // Keep all block history for accurate leaderboard calculations
+    // Reward records display is limited to 10 blocks in getUserRewardRecords()
     
     // Batch the balances write operation
     if (pendingBalancesWrite) {
