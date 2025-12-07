@@ -375,8 +375,12 @@ export async function resolveBlock(runtime: GameRuntime, botChoice: SymbolRune) 
     
     runtime.state.data.blockHistory.push(blockHistory);
     
-    // Keep all block history for accurate leaderboard calculations
-    // Removed the 10-block limit to preserve complete game history
+    // Keep only the most recent 10 blocks to avoid Discord issues
+    if (runtime.state.data.blockHistory.length > 10) {
+        runtime.state.data.blockHistory = runtime.state.data.blockHistory
+            .sort((a: BlockHistory, b: BlockHistory) => b.blockNumber - a.blockNumber)
+            .slice(0, 10);
+    }
     
     // Batch the balances write operation
     if (pendingBalancesWrite) {
@@ -431,13 +435,14 @@ export function getLastBlockRewardInfo(runtime: GameRuntime): string {
 export function getUserRewardRecords(runtime: GameRuntime, userId: string): string {
     const userHistory = runtime.state.data.blockHistory
         .filter((block: BlockHistory) => block.memberResults.some((result: MemberResult) => result.userId === userId))
-        .sort((a: BlockHistory, b: BlockHistory) => b.blockNumber - a.blockNumber); // Most recent first
+        .sort((a: BlockHistory, b: BlockHistory) => b.blockNumber - a.blockNumber) // Most recent first
+        .slice(0, 10); // Limit to most recent 10 blocks
     
     if (userHistory.length === 0) {
         return "You haven't participated in any blocks yet.";
     }
     
-    let info = `**Your Reward Records:**\n\n`;
+    let info = `**Your Reward Records (Most Recent 10 Blocks):**\n\n`;
     let totalEarned = 0;
     
     for (const block of userHistory) {
@@ -451,7 +456,7 @@ export function getUserRewardRecords(runtime: GameRuntime, userId: string): stri
         }
     }
     
-    info += `**Total Earned:** ${totalEarned.toLocaleString()} GLYPHS`;
+    info += `**Total Earned (from these 10 blocks):** ${totalEarned.toLocaleString()} GLYPHS`;
     
     return info;
 }
@@ -1038,14 +1043,16 @@ export async function resolveAuction(runtime: GameRuntime, auctionId: string): P
     const winners = leaderboard.slice(0, auction.numberOfWinners);
     const winnerIds = new Set(winners.map((w) => w.userId));
     
-    // Deduct GLYPHS from losers only (winners keep theirs)
+    // Refund GLYPHS to losers (winners keep theirs - already deducted)
     for (const [userId, bidAmount] of Object.entries(auction.bids)) {
         if (!winnerIds.has(userId)) {
-            // Loser - GLYPHS already deducted when they bid, so nothing to do
-            // (they already lost their GLYPHS when they placed the bid)
+            // Loser - refund their bid amount
+            const currentBalance = runtime.balances.data[userId] ?? 0;
+            runtime.balances.data[userId] = currentBalance + bidAmount;
         }
     }
     
+    await runtime.balances.write();
     await runtime.state.write();
 }
 
